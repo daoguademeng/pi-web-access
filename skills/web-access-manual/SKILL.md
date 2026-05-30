@@ -1,22 +1,22 @@
 ---
 name: web-access-manual
-description: Internet research via the web_access tool. Use when you need realtime search, source-backed fact checking, URL fetching, docs lookup, site mapping, or Chinese/domestic sources.
+description: Detailed guide to using the web_access tool. Read this when asked to perform in-depth internet research work.
 ---
 
 # Web Access
 
-Single `web_access` tool with `action` enumeration. **Search is discovery. Fetch is evidence.** Never conclude from search summaries alone.
+**Search is discovery. Fetch is evidence.** Never conclude from search summaries alone. Fetching at least 2~3 URLs is mandatory. 
 
 ## Actions
 
-| Action | Purpose | Default? |
-|--------|---------|:---:|
-| `grok_search` | Broad web search with Grok AI synthesis. **Strongest engine.** | ✅ |
-| `exa_search` | Low-noise authoritative search. Give `url` for find-similar. | |
-| `zhipu_search` | Chinese/domestic/realtime results. | |
-| `fetch` | Extract full page text as Markdown. **Bridge from discovery to evidence.** | |
-| `docs` | SDK/API documentation lookup. Auto-resolves library; re-call with `libraryId` if ambiguous. | |
-| `map` | Explore a site's URL structure before bulk fetching. | |
+| Action | Purpose |
+|--------|---------|
+| `grok_search` | Broad web search with Grok AI synthesis. **Strongest engine.** |
+| `exa_search` | Low-noise authoritative search. Give `url` for find-similar. |
+| `zhipu_search` | Chinese/domestic/realtime results. |
+| `fetch` | Extract full page text as Markdown. **Bridge from discovery to evidence.**. |
+| `docs` | SDK/API documentation lookup. Auto-resolves library; re-call with `libraryId` if ambiguous. |
+| `map` | Explore a site's URL structure before bulk fetching. |
 
 ---
 
@@ -88,7 +88,7 @@ web_access action: "fetch" url: "https://github.com/user/repo/blob/main/file.py"
 
 ## browser-tools Integration
 
-When the answer lives at a known URL (especially JS-rendered pages like X, Instagram, Fansly), skip search and use browser-tools directly. For live data like follower counts or prices, this is faster than searching for third-party articles. Also use when `fetch` returns empty or the page requires login:
+When the answer lives at a known URL (especially JS-rendered & login-gated pages), use browser-tools directly. For live data like follower counts or prices, this is faster than other methodes may be stale. Also use when `fetch` returns empty or the page requires login:
 ```bash
 cd skills/browser-tools
 ./browser-start.js
@@ -130,9 +130,9 @@ web_access action: "fetch" url: "https://target-url.com/article"
 ## Rules
 
 1. **Search first, fetch before concluding.** `grok_search` → screen sources → `fetch` evidence → conclude.
-2. **Parallel when possible.** Multiple `grok_search` calls from different angles finish faster.
-3. **`zhipu_search` for Chinese/realtime, not general.** Don't use it for English queries or historical topics.
+2. **Parallel when possible.** Multiple calls from different angles finish faster.
+3. **`zhipu_search` for Chinese/realtime, not general.** Don't use it for English queries.
 4. **`exa_search` for authority, not breadth.** Don't use it for broad exploration.
-5. **`docs` is two-step.** Always resolve library first unless you already know the `libraryId`.
-6. **`additionalSources` is unverified.** Screen aggressively. Fetch before citing. URLs appear under `── discovery ──` divider and in `## Additional Sources` section (labeled "not verified by Grok").
+5. **`docs` is two-step.** Resolve library first unless you already know the `libraryId`.
+6. **`additionalSources` is unverified.** Screen aggressively. Fetch before citing.
 7. **Binary files need `bash curl`.** `fetch` rejects PDF/images with guidance.

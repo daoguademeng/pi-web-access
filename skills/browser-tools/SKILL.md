@@ -1,6 +1,6 @@
 ---
 name: browser-tools
-description: Browser automation via Chrome DevTools Protocol. Use for live data from JS-rendered pages (follower counts, stats, prices — any platform), login-gated content, and real-time extraction from known URLs. Prefer over web_access when you have a specific target URL.
+description: Browser automation via Chrome DevTools Protocol. Use for live data from JS-rendered pages, login-gated content, and real-time extraction from known URLs. Prefer over web_access when you have a specific target URL.
 ---
 
 # Browser Tools
@@ -13,7 +13,7 @@ Chrome DevTools Protocol via `:9222`. Starts a Chrome instance inheriting the us
 cd skills/browser-tools && npm install
 ```
 
-Requires Google Chrome or Chromium installed natively (not Flatpak/Snap).
+Requires Google Chrome or Chromium installed natively.
 
 ## Start Chrome
 
@@ -23,7 +23,7 @@ Requires Google Chrome or Chromium installed natively (not Flatpak/Snap).
 ./browser-start.js --visible    # Show browser window (for pick.js)
 ```
 
-Headless is the **default**. Use `--visible` only when using `browser-pick.js` or debugging visually. Profile copying is also default — only Cookies, Preferences, and Local State are copied. Uses `--password-store=basic` for cookie portability.
+Headless is the default. Use `--visible` only when using `browser-pick.js` or debugging visually. Profile copying is also default — only Cookies, Preferences, and Local State are copied. Uses `--password-store=basic` for cookie portability.
 
 Auto-kills any stale Chrome on `:9222` before starting. Only one instance runs at a time.
 
@@ -83,12 +83,10 @@ Requires visible Chrome. Interactive picker—user clicks elements, returns CSS 
 
 If a page shows a login wall (cookies expired, site requires re-auth):
 
-1. Print what you see: `"This page requires login to X. I need you to:"` 
+1. Print what you see to the user: `"This page requires login to X. I need you to:"` 
 2. List the exact steps: `"1. Open Chrome  2. Go to https://x.com/login  3. Log in  4. Close Chrome"`
 3. **Stop and wait** for the user to confirm they've completed the steps
 4. Re-run `./browser-start.js` (profile is re-copied) and retry
-
-Do NOT attempt to automate login—the user types their own password.
 
 ## web_access vs browser-tools
 
