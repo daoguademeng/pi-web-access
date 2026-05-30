@@ -239,17 +239,17 @@ export const webAccessTool = defineTool({
     if (isPartial) {
       const streamText = result.content?.[0]?.type === "text" ? result.content[0].text : "";
       if (streamText && (details as any)?.isStreaming) {
-        const lines = streamText.split(/\r?\n/);
+        const allLines = streamText.split(/\r?\n/);
         const chars = streamText.length;
-        // Stats header
         let text = theme.fg("success", "●");
         text += " " + theme.fg("accent", details?.action ?? "?");
         if (details?.startedAt) text += " " + theme.fg("dim", formatElapsed(details.startedAt));
-        text += " " + theme.fg("muted", `${lines.length} lines, ${chars >= 1000 ? (chars / 1000).toFixed(1) + "k" : chars} chars`);
-        // Show last 10 lines as live waterfall preview
-        const preview = lines.slice(-10);
+        text += " " + theme.fg("muted", `${allLines.length} lines, ${chars >= 1000 ? (chars / 1000).toFixed(1) + "k" : chars} chars`);
+        // Fixed 10-line preview — pad with empty lines so height never changes
+        const preview = allLines.slice(-10);
+        while (preview.length < 10) preview.unshift("");
         for (const l of preview) {
-          text += "\n" + theme.fg("dim", `  ${l.slice(0, 160)}`);
+          text += "\n" + theme.fg("dim", `  ${l.slice(0, 160) || " "}`);
         }
         return new Text(text, 0, 0);
       }
