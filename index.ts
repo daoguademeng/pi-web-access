@@ -2,8 +2,11 @@
  * pi-web-access — Web access extension for pi
  *
  * Provides `web_access` tool + `/web-config` TUI command.
+ * Also bundles the `browser-tools` skill for JS-rendered page access.
  * Install: pi install git:github.com/daoguademeng/pi-web-access
  */
+import { fileURLToPath } from "node:url";
+import { join, dirname } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { SelectList, Text, truncateToWidth, type Component, type SelectItem, type SelectListTheme, type TUI } from "@earendil-works/pi-tui";
 import { webAccessTool, resetRound } from "./tool.js";
@@ -295,5 +298,18 @@ export default function (pi: ExtensionAPI) {
     handler: async (_args, ctx) => {
       await runConfigWizard(ctx as unknown as ConfigUiContext);
     },
+  });
+
+  // Bundle the browser-tools skill so it's available to the agent.
+  // The SKILL.md references scripts at ~/.pi/agent/skills/browser-tools/ —
+  // users must run `npm install` there once after installing this package.
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  pi.on("resources_discover", async (_event, _ctx) => {
+    return {
+      skillPaths: [
+        join(__dirname, "skills", "browser-tools"),
+        join(__dirname, "skills", "web-access-manual"),
+      ],
+    };
   });
 }

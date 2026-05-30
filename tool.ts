@@ -206,12 +206,12 @@ export const webAccessTool = defineTool({
   promptSnippet: "For web search, docs lookup, page fetching and site exploration.",
   promptGuidelines: [
     "Prefer parallel web_access calls for DISCOVERY tasks: run multiple simultaneously rather than sequentially. For known-URL tasks, a single fetch or browser-tools call is sufficient.",
-    "Before search, check: do I already know the URL where the answer lives? YES -> fetch action for static pages or brower-tools skill for JS-rendered and login-gated ones; NO -> grok_search to discover URLs",
+    "Before search, check: do I already know the URL where the answer lives? YES -> fetch action for static pages or browser-tools skill for JS-rendered and login-gated ones; NO -> grok_search to discover URLs",
     "Use grok_search when you need to discover unknown URLs. When the target URL is already known (GitHub trending, Reddit, X profile, Wikipedia, etc.), skip search and go directly with fetch or browser-tools.",
     "When you decided to search, use grok_search as the default first hop; however, skip it for simple, well-scoped lookups (specific API docs, known domains, factual one-liners). Go directly to zhipu, exa, docs, or fetch as appropriate.",
     "Use zhipu_search for Chinese/domestic/realtime; exa_search for authoritative/low-noise sources.",
     "Use docs for SDK/API library lookup and documentation retrieval.",
-    "Search is for discovery - use it when you don't know where the information might be (URLs). Fetch / browser-tools is for **truth** - go directly when you already know the answer URLs. Always verify claims against the orignial source.",
+    "Search is for discovery - use it when you don't know where the information might be (URLs). Fetch / browser-tools is for **truth** - go directly when you already know the answer URLs. Always verify claims against the original source.",
   ],
   parameters: WebAccessSchema,
 
