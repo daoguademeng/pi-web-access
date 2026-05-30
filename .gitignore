@@ -1,0 +1,18 @@
+# Never commit real config files with API keys
+web-access.json
+*.env
+.env
+.env.local
+
+# Dependencies
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
