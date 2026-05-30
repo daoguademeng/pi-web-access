@@ -1,268 +1,247 @@
-import { readFileSync } from "node:fs";
+/**
+ * pi-web-access config — layered JSON storage + env overrides.
+ *
+ * Config files (600 permissions, never committed):
+ *   global: ~/.pi/agent/web-access.json
+ *   project: .pi/web-access.json
+ *
+ * Precedence: env var > project > global > default
+ */
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { WebAccessError } from "./types.js";
+import { join, resolve } from "node:path";
 
 // ── Types ─────────────────────────────────────────────────────────
-export interface WebAccessConfig {
-  // grok_search
-  grokApiKey?: string;
-  grokApiUrl?: string;        // default: https://api.x.ai/v1
-  grokModel?: string;         // default: grok-4-fast
-  grokTimeoutMs?: number;     // default: 120_000
 
-  // grok_search fallback (OpenAI-compatible relay)
+export interface WebAccessStoredConfig {
+  grokApiKey?: string;
+  grokApiUrl?: string;
+  grokModel?: string;
+  grokTimeoutMs?: number;
   openaiApiKey?: string;
   openaiApiUrl?: string;
   openaiModel?: string;
-
-  // exa_search
   exaApiKey?: string;
-  exaBaseUrl?: string;        // default: https://api.exa.ai
-  exaTimeoutMs?: number;      // default: 30_000
-
-  // zhipu_search
+  exaBaseUrl?: string;
+  exaTimeoutMs?: number;
   zhipuApiKey?: string;
-  zhipuApiUrl?: string;       // default: https://open.bigmodel.cn/api
-  zhipuSearchEngine?: string; // default: search_std
-  zhipuTimeoutMs?: number;    // default: 30_000
-
-  // fetch / map (Tavily)
+  zhipuApiUrl?: string;
+  zhipuSearchEngine?: string;
+  zhipuTimeoutMs?: number;
   tavilyApiKey?: string;
-  tavilyApiUrl?: string;      // default: https://api.tavily.com
-  tavilyTimeoutMs?: number;   // default: 90_000
-
-  // fetch fallback (Firecrawl)
+  tavilyApiUrl?: string;
+  tavilyTimeoutMs?: number;
   firecrawlApiKey?: string;
-  firecrawlApiUrl?: string;   // default: https://api.firecrawl.dev/v2
+  firecrawlApiUrl?: string;
   firecrawlTimeoutMs?: number;
-
-  // docs (Context7)
   context7ApiKey?: string;
-  context7BaseUrl?: string;   // default: https://context7.com
-  context7TimeoutMs?: number; // default: 30_000
-
-  // map tuning (not exposed to agent)
-  mapMaxBreadth?: number;     // default: 20
-  mapLimit?: number;          // default: 50
-  mapTimeoutMs?: number;      // default: 150_000
-
-  // retry
-  retryMaxAttempts?: number;  // default: 3
+  context7BaseUrl?: string;
+  context7TimeoutMs?: number;
+  mapMaxBreadth?: number;
+  mapLimit?: number;
+  mapTimeoutMs?: number;
+  retryMaxAttempts?: number;
 }
 
-const DEFAULTS: Required<Omit<WebAccessConfig, "grokApiKey" | "openaiApiKey" | "exaApiKey" | "zhipuApiKey" | "tavilyApiKey" | "firecrawlApiKey" | "context7ApiKey">> = {
+export interface WebAccessConfig {
+  grokApiKey: string;
+  grokApiUrl: string;
+  grokModel: string;
+  grokTimeoutMs: number;
+  openaiApiKey: string;
+  openaiApiUrl: string;
+  openaiModel: string;
+  exaApiKey: string;
+  exaBaseUrl: string;
+  exaTimeoutMs: number;
+  zhipuApiKey: string;
+  zhipuApiUrl: string;
+  zhipuSearchEngine: string;
+  zhipuTimeoutMs: number;
+  tavilyApiKey: string;
+  tavilyApiUrl: string;
+  tavilyTimeoutMs: number;
+  firecrawlApiKey: string;
+  firecrawlApiUrl: string;
+  firecrawlTimeoutMs: number;
+  context7ApiKey: string;
+  context7BaseUrl: string;
+  context7TimeoutMs: number;
+  mapMaxBreadth: number;
+  mapLimit: number;
+  mapTimeoutMs: number;
+  retryMaxAttempts: number;
+}
+
+export type ConfigScope = "project" | "global";
+
+// ── Defaults ──────────────────────────────────────────────────────
+
+const DEFAULTS: WebAccessConfig = {
+  grokApiKey: "",
   grokApiUrl: "https://api.x.ai/v1",
   grokModel: "grok-4-fast",
   grokTimeoutMs: 120_000,
-
+  openaiApiKey: "",
   openaiApiUrl: "",
   openaiModel: "grok-4-fast",
-
+  exaApiKey: "",
   exaBaseUrl: "https://api.exa.ai",
   exaTimeoutMs: 30_000,
-
+  zhipuApiKey: "",
   zhipuApiUrl: "https://open.bigmodel.cn/api",
   zhipuSearchEngine: "search_std",
   zhipuTimeoutMs: 30_000,
-
+  tavilyApiKey: "",
   tavilyApiUrl: "https://api.tavily.com",
   tavilyTimeoutMs: 90_000,
-
+  firecrawlApiKey: "",
   firecrawlApiUrl: "https://api.firecrawl.dev/v2",
   firecrawlTimeoutMs: 90_000,
-
+  context7ApiKey: "",
   context7BaseUrl: "https://context7.com",
   context7TimeoutMs: 30_000,
-
   mapMaxBreadth: 20,
   mapLimit: 50,
   mapTimeoutMs: 150_000,
-
   retryMaxAttempts: 3,
 };
 
-// ── Config file paths ─────────────────────────────────────────────
-function configFilePath(projectRoot: string): { global: string; project: string } {
-  const agentDir = join(homedir(), ".pi", "agent");
-  return {
-    global: join(agentDir, "web-access.json"),
-    project: join(projectRoot, ".pi", "web-access.json"),
-  };
-}
-
-// ── Read ──────────────────────────────────────────────────────────
-function readJsonFile(path: string): Record<string, unknown> | null | "malformed" {
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf-8");
-  } catch {
-    return null; // file missing
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : "malformed";
-  } catch {
-    return "malformed";
-  }
-}
-
-function envOverride<T>(envKey: string, transform: (v: string) => T): T | undefined {
-  const value = process.env[envKey];
-  if (value === undefined || value.trim() === "") return undefined;
-  return transform(value);
-}
-
-// ── Resolve ───────────────────────────────────────────────────────
-export function loadConfig(projectRoot: string): WebAccessConfig {
-  const paths = configFilePath(projectRoot);
-
-  // Layer: defaults → global → project → env
-  const merged: Record<string, unknown> = {};
-
-  // global file
-  const globalData = readJsonFile(paths.global);
-  if (globalData === "malformed") {
-    console.warn(`web-access: ${paths.global} is malformed JSON, ignoring`);
-  } else if (globalData) {
-    Object.assign(merged, globalData);
-  }
-
-  // project file
-  const projectData = readJsonFile(paths.project);
-  if (projectData === "malformed") {
-    console.warn(`web-access: ${paths.project} is malformed JSON, ignoring`);
-  } else if (projectData) {
-    Object.assign(merged, projectData);
-  }
-
-  // Apply defaults for missing keys
-  const result: WebAccessConfig = {};
-  for (const [key, defaultVal] of Object.entries(DEFAULTS)) {
-    (result as Record<string, unknown>)[key] = key in merged ? merged[key] : defaultVal;
-  }
-  // Manually copy optional keys (API keys)
-  for (const key of ["grokApiKey", "openaiApiKey", "exaApiKey", "zhipuApiKey", "tavilyApiKey", "firecrawlApiKey", "context7ApiKey"]) {
-    if (key in merged) (result as Record<string, unknown>)[key] = merged[key];
-  }
-
-  // ── Env overrides ───────────────────────────────────────────
-  const envApiKey = envOverride("XAI_API_KEY", String);
-  if (envApiKey) result.grokApiKey = envApiKey;
-
-  const envApiUrl = envOverride("XAI_API_URL", String);
-  if (envApiUrl) result.grokApiUrl = envApiUrl;
-
-  const envModel = envOverride("XAI_MODEL", String);
-  if (envModel) result.grokModel = envModel;
-
-  const envOpenAiKey = envOverride("OPENAI_COMPATIBLE_API_KEY", String);
-  if (envOpenAiKey) result.openaiApiKey = envOpenAiKey;
-
-  const envOpenAiUrl = envOverride("OPENAI_COMPATIBLE_API_URL", String);
-  if (envOpenAiUrl) result.openaiApiUrl = envOpenAiUrl;
-
-  const envOpenAiModel = envOverride("OPENAI_COMPATIBLE_MODEL", String);
-  if (envOpenAiModel) result.openaiModel = envOpenAiModel;
-
-  const envExaKey = envOverride("EXA_API_KEY", String);
-  if (envExaKey) result.exaApiKey = envExaKey;
-
-  const envExaUrl = envOverride("EXA_BASE_URL", String);
-  if (envExaUrl) result.exaBaseUrl = envExaUrl;
-
-  const envZhipuKey = envOverride("ZHIPU_API_KEY", String);
-  if (envZhipuKey) result.zhipuApiKey = envZhipuKey;
-
-  const envZhipuUrl = envOverride("ZHIPU_API_URL", String);
-  if (envZhipuUrl) result.zhipuApiUrl = envZhipuUrl;
-
-  const envZhipuEngine = envOverride("ZHIPU_SEARCH_ENGINE", String);
-  if (envZhipuEngine) result.zhipuSearchEngine = envZhipuEngine;
-
-  const envTavilyKey = envOverride("TAVILY_API_KEY", String);
-  if (envTavilyKey) result.tavilyApiKey = envTavilyKey;
-
-  const envTavilyUrl = envOverride("TAVILY_API_URL", String);
-  if (envTavilyUrl) result.tavilyApiUrl = envTavilyUrl;
-
-  const envFirecrawlKey = envOverride("FIRECRAWL_API_KEY", String);
-  if (envFirecrawlKey) result.firecrawlApiKey = envFirecrawlKey;
-
-  const envFirecrawlUrl = envOverride("FIRECRAWL_API_URL", String);
-  if (envFirecrawlUrl) result.firecrawlApiUrl = envFirecrawlUrl;
-
-  const envContext7Key = envOverride("CONTEXT7_API_KEY", String);
-  if (envContext7Key) result.context7ApiKey = envContext7Key;
-
-  const envContext7Url = envOverride("CONTEXT7_BASE_URL", String);
-  if (envContext7Url) result.context7BaseUrl = envContext7Url;
-
-  // Timeout overrides
-  const envGrokTimeout = envOverride("GROK_TIMEOUT_MS", Number);
-  if (envGrokTimeout) result.grokTimeoutMs = envGrokTimeout;
-  const envExaTimeout = envOverride("EXA_TIMEOUT_MS", Number);
-  if (envExaTimeout) result.exaTimeoutMs = envExaTimeout;
-  const envZhipuTimeout = envOverride("ZHIPU_TIMEOUT_MS", Number);
-  if (envZhipuTimeout) result.zhipuTimeoutMs = envZhipuTimeout;
-  const envTavilyTimeout = envOverride("TAVILY_TIMEOUT_MS", Number);
-  if (envTavilyTimeout) result.tavilyTimeoutMs = envTavilyTimeout;
-  const envContext7Timeout = envOverride("CONTEXT7_TIMEOUT_MS", Number);
-  if (envContext7Timeout) result.context7TimeoutMs = envContext7Timeout;
-  const envRetry = envOverride("RETRY_MAX_ATTEMPTS", Number);
-  if (envRetry) result.retryMaxAttempts = envRetry;
-
-  return result;
-}
-
 // ── Helpers ───────────────────────────────────────────────────────
-export function resolveConfig(config: WebAccessConfig): {
-  key: string;
-  value: string;
-  required: boolean;
-} {
-  // Return the primary grok provider config, preferring xAI over OpenAI
-  if (config.grokApiKey) {
-    return {
-      key: config.grokApiKey,
-      value: config.grokApiUrl ?? DEFAULTS.grokApiUrl,
-      required: true,
-    };
+
+function maybeStr(v: unknown): string | undefined {
+  return typeof v === "string" && v.trim() !== "" ? v.trim() : undefined;
+}
+
+function maybePosInt(v: unknown): number | undefined {
+  if (typeof v === "number" && Number.isFinite(v) && v > 0) return Math.trunc(v);
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number.parseInt(v.trim(), 10);
+    if (Number.isFinite(n) && n > 0) return n;
   }
+  return undefined;
+}
+
+function readEnvStr(name: string, stored: string | undefined, fallback: string): string {
+  return maybeStr(process.env[name]) ?? stored ?? fallback;
+}
+
+function readEnvPosInt(name: string, stored: number | undefined, fallback: number): number {
+  return maybePosInt(process.env[name]) ?? stored ?? fallback;
+}
+
+function cleanConfig(c: WebAccessStoredConfig): WebAccessStoredConfig {
+  const out: WebAccessStoredConfig = {};
+  for (const [k, v] of Object.entries(c)) {
+    if (v !== undefined && v !== "" && v !== null) (out as any)[k] = v;
+  }
+  return out;
+}
+
+// ── Paths ─────────────────────────────────────────────────────────
+
+export function getConfigPath(scope: ConfigScope, cwd: string): string {
+  return scope === "global"
+    ? join(homedir(), ".pi", "agent", "web-access.json")
+    : join(resolve(cwd), ".pi", "web-access.json");
+}
+
+// ── Read / Write / Delete ─────────────────────────────────────────
+
+export function readStoredConfig(scope: ConfigScope, cwd: string): WebAccessStoredConfig {
+  try {
+    const raw = JSON.parse(readFileSync(getConfigPath(scope, cwd), "utf-8"));
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    return cleanConfig(raw as WebAccessStoredConfig);
+  } catch {
+    return {};
+  }
+}
+
+export function writeStoredConfig(scope: ConfigScope, cwd: string, config: WebAccessStoredConfig): string {
+  const fp = getConfigPath(scope, cwd);
+  mkdirSync(join(fp, ".."), { recursive: true });
+  writeFileSync(fp, JSON.stringify(cleanConfig(config), null, 2) + "\n", { encoding: "utf-8", mode: 0o600 });
+  return fp;
+}
+
+export function deleteStoredConfig(scope: ConfigScope, cwd: string): string {
+  const fp = getConfigPath(scope, cwd);
+  rmSync(fp, { force: true });
+  return fp;
+}
+
+// ── Load (merged) ─────────────────────────────────────────────────
+
+export function loadConfig(cwd?: string): WebAccessConfig {
+  const dir = cwd ?? process.cwd();
+  const global = readStoredConfig("global", dir);
+  const project = readStoredConfig("project", dir);
+  const defaults = DEFAULTS;
+
   return {
-    key: config.grokApiKey ?? "",
-    value: config.grokApiUrl ?? DEFAULTS.grokApiUrl,
-    required: true,
+    grokApiKey: readEnvStr("XAI_API_KEY", project.grokApiKey ?? global.grokApiKey, defaults.grokApiKey),
+    grokApiUrl: readEnvStr("XAI_API_URL", project.grokApiUrl ?? global.grokApiUrl, defaults.grokApiUrl),
+    grokModel: readEnvStr("XAI_MODEL", project.grokModel ?? global.grokModel, defaults.grokModel),
+    grokTimeoutMs: readEnvPosInt("GROK_TIMEOUT_MS", project.grokTimeoutMs ?? global.grokTimeoutMs, defaults.grokTimeoutMs),
+    openaiApiKey: readEnvStr("OPENAI_COMPATIBLE_API_KEY", project.openaiApiKey ?? global.openaiApiKey, defaults.openaiApiKey),
+    openaiApiUrl: readEnvStr("OPENAI_COMPATIBLE_API_URL", project.openaiApiUrl ?? global.openaiApiUrl, defaults.openaiApiUrl),
+    openaiModel: readEnvStr("OPENAI_COMPATIBLE_MODEL", project.openaiModel ?? global.openaiModel, defaults.openaiModel),
+    exaApiKey: readEnvStr("EXA_API_KEY", project.exaApiKey ?? global.exaApiKey, defaults.exaApiKey),
+    exaBaseUrl: readEnvStr("EXA_BASE_URL", project.exaBaseUrl ?? global.exaBaseUrl, defaults.exaBaseUrl),
+    exaTimeoutMs: readEnvPosInt("EXA_TIMEOUT_MS", project.exaTimeoutMs ?? global.exaTimeoutMs, defaults.exaTimeoutMs),
+    zhipuApiKey: readEnvStr("ZHIPU_API_KEY", project.zhipuApiKey ?? global.zhipuApiKey, defaults.zhipuApiKey),
+    zhipuApiUrl: readEnvStr("ZHIPU_API_URL", project.zhipuApiUrl ?? global.zhipuApiUrl, defaults.zhipuApiUrl),
+    zhipuSearchEngine: readEnvStr("ZHIPU_SEARCH_ENGINE", project.zhipuSearchEngine ?? global.zhipuSearchEngine, defaults.zhipuSearchEngine),
+    zhipuTimeoutMs: readEnvPosInt("ZHIPU_TIMEOUT_MS", project.zhipuTimeoutMs ?? global.zhipuTimeoutMs, defaults.zhipuTimeoutMs),
+    tavilyApiKey: readEnvStr("TAVILY_API_KEY", project.tavilyApiKey ?? global.tavilyApiKey, defaults.tavilyApiKey),
+    tavilyApiUrl: readEnvStr("TAVILY_API_URL", project.tavilyApiUrl ?? global.tavilyApiUrl, defaults.tavilyApiUrl),
+    tavilyTimeoutMs: readEnvPosInt("TAVILY_TIMEOUT_MS", project.tavilyTimeoutMs ?? global.tavilyTimeoutMs, defaults.tavilyTimeoutMs),
+    firecrawlApiKey: readEnvStr("FIRECRAWL_API_KEY", project.firecrawlApiKey ?? global.firecrawlApiKey, defaults.firecrawlApiKey),
+    firecrawlApiUrl: readEnvStr("FIRECRAWL_API_URL", project.firecrawlApiUrl ?? global.firecrawlApiUrl, defaults.firecrawlApiUrl),
+    firecrawlTimeoutMs: readEnvPosInt("FIRECRAWL_TIMEOUT_MS", project.firecrawlTimeoutMs ?? global.firecrawlTimeoutMs, defaults.firecrawlTimeoutMs),
+    context7ApiKey: readEnvStr("CONTEXT7_API_KEY", project.context7ApiKey ?? global.context7ApiKey, defaults.context7ApiKey),
+    context7BaseUrl: readEnvStr("CONTEXT7_BASE_URL", project.context7BaseUrl ?? global.context7BaseUrl, defaults.context7BaseUrl),
+    context7TimeoutMs: readEnvPosInt("CONTEXT7_TIMEOUT_MS", project.context7TimeoutMs ?? global.context7TimeoutMs, defaults.context7TimeoutMs),
+    mapMaxBreadth: readEnvPosInt("MAP_MAX_BREADTH", project.mapMaxBreadth ?? global.mapMaxBreadth, defaults.mapMaxBreadth),
+    mapLimit: readEnvPosInt("MAP_LIMIT", project.mapLimit ?? global.mapLimit, defaults.mapLimit),
+    mapTimeoutMs: readEnvPosInt("MAP_TIMEOUT_MS", project.mapTimeoutMs ?? global.mapTimeoutMs, defaults.mapTimeoutMs),
+    retryMaxAttempts: readEnvPosInt("RETRY_MAX_ATTEMPTS", project.retryMaxAttempts ?? global.retryMaxAttempts, defaults.retryMaxAttempts),
   };
 }
+
+// ── Validation ────────────────────────────────────────────────────
+
+export function validateConfig(c: WebAccessConfig): string[] {
+  const issues: string[] = [];
+  const hasGrok = !!c.grokApiKey;
+  const hasOpenAI = !!(c.openaiApiUrl && c.openaiApiKey);
+  if (!hasGrok && !hasOpenAI) {
+    issues.push("grok_search requires grokApiKey (XAI_API_KEY) or openaiApiKey+openaiApiUrl");
+  }
+  if (!c.tavilyApiKey && !c.firecrawlApiKey) {
+    issues.push("fetch requires tavilyApiKey (TAVILY_API_KEY) or firecrawlApiKey (FIRECRAWL_API_KEY)");
+  }
+  return issues;
+}
+
+// ── Runtime guards (used by tool.ts) ──────────────────────────────
+
+import { WebAccessError } from "./types.js";
 
 export function ensureConfig(config: WebAccessConfig): asserts config is WebAccessConfig {
   if (!config.grokApiKey && !(config.openaiApiUrl && config.openaiApiKey)) {
     throw new WebAccessError(
       "provider_not_configured",
-      "web_access: grok_search requires at least one of XAI_API_KEY or OPENAI_COMPATIBLE_API_URL+OPENAI_COMPATIBLE_API_KEY to be configured.",
+      "web_access: grok_search requires grokApiKey or openaiApiKey+openaiApiUrl to be configured. Run /web-config."
     );
   }
 }
 
-export function ensureFetchConfig(config: WebAccessConfig): asserts config is WebAccessConfig {
-  if (!config.tavilyApiKey && !config.firecrawlApiKey) {
-    throw new WebAccessError(
-      "provider_not_configured",
-      "web_access: fetch requires at least one of TAVILY_API_KEY or FIRECRAWL_API_KEY to be configured.",
-    );
-  }
-}
+// ── UI helpers ────────────────────────────────────────────────────
 
-/** Resolve effective value with precedence: explicit param → config → default. */
-export function resolveValue<T>(
-  explicit: T | undefined,
-  configValue: T | undefined,
-  defaultValue: T,
-): T {
-  if (explicit !== undefined) return explicit;
-  if (configValue !== undefined) return configValue;
-  return defaultValue;
+export function maskSecret(v: string | undefined): string {
+  if (!v) return "not set";
+  if (v.length <= 8) return "********";
+  return `${v.slice(0, 4)}...${v.slice(-4)}`;
 }
