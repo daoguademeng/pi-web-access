@@ -238,19 +238,14 @@ export const webAccessTool = defineTool({
 
     if (isPartial) {
       const streamText = result.content?.[0]?.type === "text" ? result.content[0].text : "";
+      // Streaming: show stats only — line count updates in real time, no text preview
       if (streamText && (details as any)?.isStreaming) {
-        const allLines = streamText.split(/\r?\n/);
+        const lines = streamText.split(/\r?\n/).length;
         const chars = streamText.length;
         let text = theme.fg("success", "●");
         text += " " + theme.fg("accent", details?.action ?? "?");
         if (details?.startedAt) text += " " + theme.fg("dim", formatElapsed(details.startedAt));
-        text += " " + theme.fg("muted", `${allLines.length} lines, ${chars >= 1000 ? (chars / 1000).toFixed(1) + "k" : chars} chars`);
-        // Fixed 10-line preview — pad with empty lines so height never changes
-        const preview = allLines.slice(-10);
-        while (preview.length < 10) preview.unshift("");
-        for (const l of preview) {
-          text += "\n" + theme.fg("dim", `  ${l.slice(0, 160) || " "}`);
-        }
+        text += " " + theme.fg("muted", `${lines} lines, ${chars >= 1000 ? (chars / 1000).toFixed(1) + "k" : chars} chars`);
         return new Text(text, 0, 0);
       }
       let text = theme.fg("toolTitle", "searching");
@@ -312,7 +307,7 @@ export const webAccessTool = defineTool({
     const heartbeat = setInterval(() => {
       spinnerIdx++;
       updateStatus(ctx, startedAt);
-    }, 100);
+    }, 130);
 
     // Streaming callback for grok_search: push incremental text to TUI
     const onChunk = _onUpdate && params.action === "grok_search"

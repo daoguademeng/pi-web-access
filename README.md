@@ -1,85 +1,85 @@
 # pi-web-access
 
-Web access extension for [pi](https://github.com/earendil-works/pi-coding-agent) — integrates live web search, page fetching, site mapping, documentation lookup, and headless browser automation into a single `pi install`.
+[pi](https://github.com/earendil-works/pi-coding-agent) 的网页访问扩展——将实时网页搜索、页面抓取、站点地图、文档查询和 headless 浏览器自动化整合为一个 `pi install` 即可使用的包。
 
-## Features
+## 功能
 
-### `web_access` Tool
+### `web_access` 工具
 
-A single tool with 6 actions:
+单一工具，6 种操作：
 
-| Action | Description | Provider |
-|--------|-------------|----------|
-| `grok_search` | Broad web search with AI synthesis | xAI Grok / OpenAI-compatible relay |
-| `exa_search` | Low-noise authoritative search | Exa |
-| `zhipu_search` | Chinese / domestic / realtime search | Zhipu (智谱) |
-| `fetch` | Extract full page text as Markdown | Tavily / Firecrawl |
-| `docs` | SDK / API documentation lookup | Context7 |
-| `map` | Explore site URL structure | Tavily |
+| 操作 | 说明 | 提供商 |
+|------|------|--------|
+| `grok_search` | 广泛网页搜索 + AI 综合 | xAI Grok / OpenAI 兼容中继 |
+| `exa_search` | 低噪声权威搜索 | Exa |
+| `zhipu_search` | 中文 / 国内 / 实时搜索 | 智谱 |
+| `fetch` | 将网页提取为 Markdown | Tavily / Firecrawl |
+| `docs` | SDK / API 文档查询 | Context7 |
+| `map` | 探索站点 URL 结构 | Tavily |
 
-### `browser-tools` Skill
+### `browser-tools` 技能
 
-Headless Chrome automation via Chrome DevTools Protocol — for JS-rendered pages (X, Instagram, GitHub), login-gated content, and live data extraction.
+通过 Chrome DevTools Protocol 实现 headless 浏览器自动化——用于 JS 渲染页面（任何平台）、需登录的内容和实时数据提取。
 
-| Script | Purpose |
-|--------|---------|
-| `browser-start.js` | Launch headless Chrome with user profile (cookies) |
-| `browser-nav.js` | Navigate to a URL |
-| `browser-eval.js` | Evaluate JavaScript in the page |
-| `browser-content.js` | Extract readable Markdown via Mozilla Readability |
-| `browser-screenshot.js` | Take a page screenshot |
-| `browser-cookies.js` | List cookies for current tab |
-| `browser-pick.js` | Interactive element picker (requires `--visible`) |
-| `browser-stop.js` | Stop Chrome to free ~430MB memory |
+| 脚本 | 用途 |
+|------|------|
+| `browser-start.js` | 启动 headless Chrome（带用户 cookie） |
+| `browser-nav.js` | 导航到 URL |
+| `browser-eval.js` | 在页面中执行 JavaScript |
+| `browser-content.js` | 通过 Mozilla Readability 提取可读 Markdown |
+| `browser-screenshot.js` | 截取页面截图 |
+| `browser-cookies.js` | 列出当前标签页的 cookie |
+| `browser-pick.js` | 交互式元素选择器（需 `--visible`） |
+| `browser-stop.js` | 停止 Chrome，释放约 430MB 内存 |
 
-### `/web-config` Command
+### `/web-config` 命令
 
-Interactive TUI for managing API keys and settings — no manual JSON editing required.
+交互式 TUI 管理 API 密钥和设置——无需手动编辑 JSON。
 
-- **Scope**: Global (`~/.pi/agent/web-access.json`) or Project (`.pi/web-access.json`)
-- **API Keys**: 9 providers with masked display
-- **Advanced**: URLs, models, timeouts, retry, map limits
+- **范围**：全局（`~/.pi/agent/web-access.json`）或项目（`.pi/web-access.json`）
+- **API 密钥**：9 个提供商，脱敏显示
+- **高级**：URL、模型、超时、重试、地图限制
 
-Precedence: environment variables > project config > global config > defaults.
+优先级：环境变量 > 项目配置 > 全局配置 > 默认值。
 
-## Install
+## 安装
 
 ```bash
 pi install git:github.com/daoguademeng/pi-web-access
 ```
 
-This is a single-step install. The `postinstall` script automatically runs `npm install` in `skills/browser-tools/` to set up Puppeteer. Then `/reload` in pi, and configure your keys:
+一步安装。`postinstall` 脚本自动在 `skills/browser-tools/` 中执行 `npm install` 设置 Puppeteer。然后在 pi 中 `/reload`，配置密钥：
 
 ```bash
 /web-config
 ```
 
-Browser-tools requires Google Chrome or Chromium installed natively (not Flatpak/Snap).
+browser-tools 需要系统原生安装 Google Chrome 或 Chromium（非 Flatpak/Snap）。
 
-## Configuration
+## 配置
 
-All API keys are stored in JSON config files with `0600` permissions and excluded from git:
+所有 API 密钥存储在 `0600` 权限的 JSON 文件中，已通过 gitignore 排除：
 
-- **Global**: `~/.pi/agent/web-access.json`
-- **Project**: `.pi/web-access.json`
+- **全局**：`~/.pi/agent/web-access.json`
+- **项目**：`.pi/web-access.json`
 
-Alternatively, use environment variables:
+也可使用环境变量：
 
-| Provider | Env Var |
-|----------|---------|
+| 提供商 | 环境变量 |
+|--------|----------|
 | xAI Grok | `XAI_API_KEY`, `XAI_API_URL`, `XAI_MODEL` |
-| OpenAI-compatible | `OPENAI_COMPATIBLE_API_KEY`, `OPENAI_COMPATIBLE_API_URL`, `OPENAI_COMPATIBLE_MODEL` |
+| OpenAI 兼容 | `OPENAI_COMPATIBLE_API_KEY`, `OPENAI_COMPATIBLE_API_URL`, `OPENAI_COMPATIBLE_MODEL` |
 | Exa | `EXA_API_KEY` |
-| Zhipu | `ZHIPU_API_KEY`, `ZHIPU_API_URL`, `ZHIPU_SEARCH_ENGINE` |
+| 智谱 | `ZHIPU_API_KEY`, `ZHIPU_API_URL`, `ZHIPU_SEARCH_ENGINE` |
 | Tavily | `TAVILY_API_KEY` |
 | Firecrawl | `FIRECRAWL_API_KEY` |
 | Context7 | `CONTEXT7_API_KEY` |
 
-## Quick Test
+## 快速测试
 
 ```bash
-# web_access — all 6 actions
-/web-config                              # configure API keys first
+# web_access — 全部 6 种操作
+/web-config                              # 先配置 API 密钥
 
 # browser-tools
 cd skills/browser-tools
@@ -89,42 +89,42 @@ cd skills/browser-tools
 ./browser-stop.js
 ```
 
-## Repository Structure
+## 仓库结构
 
 ```
 pi-web-access/
-├── index.ts                  # Extension entry point + /web-config command
-├── tool.ts                   # web_access tool definition (6 actions)
-├── config.ts                 # Layered config storage (global + project)
-├── types.ts                  # TypeScript type definitions
-├── providers/                # Provider implementations
-│   ├── grok.ts               #   xAI / OpenAI-compatible
-│   ├── exa.ts                #   Exa search
-│   ├── zhipu.ts              #   Zhipu search
-│   ├── fetch.ts              #   Tavily / Firecrawl fetch
-│   ├── tavily.ts             #   Tavily site map
-│   ├── context7.ts           #   Context7 docs lookup
-│   └── shared.ts             #   Shared HTTP utilities
+├── index.ts                  # 扩展入口 + /web-config 命令
+├── tool.ts                   # web_access 工具定义（6 种操作）
+├── config.ts                 # 分层配置存储（全局 + 项目）
+├── types.ts                  # TypeScript 类型定义
+├── providers/                # 提供商实现
+│   ├── grok.ts               #   xAI / OpenAI 兼容
+│   ├── exa.ts                #   Exa 搜索
+│   ├── zhipu.ts              #   智谱搜索
+│   ├── fetch.ts              #   Tavily / Firecrawl 抓取
+│   ├── tavily.ts             #   Tavily 站点地图
+│   ├── context7.ts           #   Context7 文档查询
+│   └── shared.ts             #   共享 HTTP 工具
 ├── skills/
-│   ├── browser-tools/        # Chrome CDP automation scripts
-│   │   ├── SKILL.md          #   Agent skill instructions
-│   │   ├── browser-*.js      #   Automation scripts
-│   │   └── package.json      #   Puppeteer dependencies
-│   └── web-access-manual/    # Comprehensive web_access usage guide
+│   ├── browser-tools/        # Chrome CDP 自动化脚本
+│   │   ├── SKILL.md          #   Agent 技能说明
+│   │   ├── browser-*.js      #   自动化脚本
+│   │   └── package.json      #   Puppeteer 依赖
+│   └── web-access-manual/    # web_access 完整使用手册
 │       └── SKILL.md
-├── web-access.example.json   # Example config template (no real keys)
-├── .gitignore                # Excludes web-access.json + node_modules
-└── package.json              # pi package manifest + postinstall
+├── web-access.example.json   # 示例配置模板（无真实密钥）
+├── .gitignore                # 排除 web-access.json + node_modules
+└── package.json              # pi 包清单 + postinstall
 ```
 
-## Acknowledgments
+## 致谢
 
-- **[konbakuyomu/smartsearch](https://github.com/konbakuyomu/smartsearch)** — The `web_access` tool is adapted from smart-search's multi-provider web research architecture, including Grok, Exa, Zhipu, Context7, Tavily, and Firecrawl integrations. smart-search is an excellent CLI-first research tool — check it out for standalone terminal use.
+- **[konbakuyomu/smartsearch](https://github.com/konbakuyomu/smartsearch)** — `web_access` 工具改编自 smart-search 的多提供商网页研究架构，包括 Grok、Exa、智谱、Context7、Tavily 和 Firecrawl 集成。smart-search 是一款优秀的 CLI 优先研究工具——推荐查看其命令行版本。
 
-- **[badlogic/pi-skills](https://github.com/badlogic/pi-skills/tree/main/browser-tools)** — The `browser-tools` skill originates from pi's creator Mario Zechner (badlogic). The Chrome DevTools Protocol scripts, SKILL.md, and the headless browser automation approach are from the official pi-skills repository.
+- **[badlogic/pi-skills](https://github.com/badlogic/pi-skills/tree/main/browser-tools)** — `browser-tools` 技能源自 pi 的创建者 Mario Zechner（badlogic）。Chrome DevTools Protocol 脚本、SKILL.md 和 headless 浏览器自动化方案均来自官方 pi-skills 仓库。
 
-Thank you to both projects for making this pi extension possible.
+感谢这两个项目使本 pi 扩展得以实现。
 
-## License
+## 许可证
 
 MIT
