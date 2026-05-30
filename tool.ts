@@ -239,15 +239,14 @@ export const webAccessTool = defineTool({
     if (isPartial) {
       const streamText = result.content?.[0]?.type === "text" ? result.content[0].text : "";
       if (streamText && (details as any)?.isStreaming) {
-        // Show all streaming text — TUI renders bottom-up, creating waterfall effect
+        // Collapsed: show stats only. User expands with Ctrl+O to see text.
+        const lines = streamText.split(/\r?\n/);
+        const chars = streamText.length;
         let text = theme.fg("success", "●");
         text += " " + theme.fg("accent", details?.action ?? "?");
         if (details?.startedAt) text += " " + theme.fg("dim", formatElapsed(details.startedAt));
-        text += " " + theme.fg("muted", "streaming…");
-        const lines = streamText.split(/\r?\n/);
-        for (const l of lines) {
-          text += "\n" + theme.fg("dim", `  ${l.slice(0, 200)}`);
-        }
+        text += " " + theme.fg("muted", `${lines.length} lines, ${chars >= 1000 ? (chars / 1000).toFixed(1) + "k" : chars} chars`);
+        text += "\n" + theme.fg("dim", "  Ctrl+O to expand · live streaming…");
         return new Text(text, 0, 0);
       }
       let text = theme.fg("toolTitle", "searching");
