@@ -1,6 +1,6 @@
 ---
 name: browser-tools
-description: Browser automation via Chrome DevTools Protocol. Use for live data from JS-rendered pages (X, Instagram, Fansly), login-gated content, and real-time extraction from known URLs. Prefer over web_access when you have a specific target URL.
+description: Browser automation via Chrome DevTools Protocol. Use for live data from JS-rendered pages (follower counts, stats, prices — any platform), login-gated content, and real-time extraction from known URLs. Prefer over web_access when you have a specific target URL.
 ---
 
 # Browser Tools

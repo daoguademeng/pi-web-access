@@ -83,14 +83,14 @@ export interface WebAccessDetails {
   sourceCount: number;
 }
 
-async function executeAction(params: WebAccessParams, cwd: string, signal?: AbortSignal): Promise<WebAccessResult> {
+async function executeAction(params: WebAccessParams, cwd: string, signal?: AbortSignal, onChunk?: (text: string) => void): Promise<WebAccessResult> {
   const config = loadConfig(cwd);
 
   switch (params.action) {
     case "grok_search": {
       if (!params.query) throw new WebAccessError("invalid_params", "grok_search requires 'query' parameter.");
       ensureConfig(config);
-      return grokSearch(params.query, config, signal, params.additionalSources);
+      return grokSearch(params.query, config, signal, params.additionalSources, onChunk);
     }
     case "exa_search":
       if (!params.query && !params.url) throw new WebAccessError("invalid_params", "exa_search requires 'query' or 'url' parameter.");
@@ -237,6 +237,18 @@ export const webAccessTool = defineTool({
     const isError = (context as { isError?: boolean } | undefined)?.isError ?? false;
 
     if (isPartial) {
+      const streamText = result.content?.[0]?.type === "text" ? result.content[0].text : "";
+      if (streamText && (details as any)?.isStreaming) {
+        // Show streaming text with elapsed time
+        let text = theme.fg("success", "●");
+        text += " " + theme.fg("accent", details?.action ?? "?");
+        if (details?.startedAt) text += " " + theme.fg("dim", formatElapsed(details.startedAt));
+        // Show last few lines of streaming content
+        const lines = streamText.split(/\r?\n/);
+        const preview = lines.slice(-6).map(l => l.slice(0, 120)).join("\n");
+        if (preview) text += "\n" + theme.fg("dim", preview);
+        return new Text(text, 0, 0);
+      }
       let text = theme.fg("toolTitle", "searching");
       if (details?.startedAt) text += " " + theme.fg("dim", formatElapsed(details.startedAt));
       return new Text(text, 0, 0);
@@ -298,9 +310,24 @@ export const webAccessTool = defineTool({
       updateStatus(ctx, startedAt);
     }, 80);
 
+    // Streaming callback for grok_search: push incremental text to TUI
+    const onChunk = _onUpdate && params.action === "grok_search"
+      ? (text: string) => {
+          _onUpdate({
+            content: [{ type: "text", text }],
+            details: {
+              action: params.action,
+              query: params.query,
+              startedAt,
+              isStreaming: true,
+            },
+          });
+        }
+      : undefined;
+
     try {
       signal?.throwIfAborted?.();
-      const result = await executeAction(params, ctx.cwd, signal);
+      const result = await executeAction(params, ctx.cwd, signal, onChunk);
       signal?.throwIfAborted?.();
 
       const details: WebAccessDetails = {

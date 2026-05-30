@@ -209,7 +209,7 @@ function parseSseBody(body: string): string | null {
 // Main search + discovery helpers
 // ═══════════════════════════════════════════════════════════════════
 
-async function searchMain(query: string, config: WebAccessConfig, signal?: AbortSignal): Promise<SearchResult> {
+async function searchMain(query: string, config: WebAccessConfig, signal?: AbortSignal, onChunk?: (text: string) => void): Promise<SearchResult> {
   const errors: string[] = [];
 
   if (config.grokApiKey) {
@@ -225,7 +225,7 @@ async function searchMain(query: string, config: WebAccessConfig, signal?: Abort
 
   if (config.openaiApiUrl && config.openaiApiKey) {
     try {
-      return await tryOpenAiSearch(query, config, signal);
+      return await tryOpenAiSearch(query, config, signal, onChunk);
     } catch (err) {
       if (signal?.aborted) throw err;
       if (err instanceof WebAccessError && err.code === "auth_error") throw err;
@@ -269,13 +269,14 @@ export async function grokSearch(
   config: WebAccessConfig,
   signal?: AbortSignal,
   additionalSources = 0,
+  onChunk?: (text: string) => void,
 ): Promise<SearchResult> {
   const timeContext = getLocalTimeInfo();
   const timedQuery = `${timeContext}\n\n${query}`;
 
   // ── Parallel: main search + discovery ──────────────────────────
   const [mainResult, discovered] = await Promise.allSettled([
-    searchMain(timedQuery, config, signal),
+    searchMain(timedQuery, config, signal, onChunk),
     additionalSources > 0
       ? discoverAdditional(query, additionalSources, config, signal)
       : Promise.resolve([] as Source[]),
@@ -347,6 +348,7 @@ async function tryOpenAiSearch(
   query: string,
   config: WebAccessConfig,
   signal?: AbortSignal,
+  onChunk?: (text: string) => void,
 ): Promise<SearchResult> {
   const apiUrl = config.openaiApiUrl!.replace(/\/$/, "");
   const payload = {
@@ -359,44 +361,85 @@ async function tryOpenAiSearch(
   };
 
   try {
-    const body = await retryWithBackoff(
-      async () => {
-        const r = await fetchWithTimeout(
-          `${apiUrl}/chat/completions`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${config.openaiApiKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload),
-          },
-          config.grokTimeoutMs!,
-          signal,
-        );
-        return r.text();
-      },
-      { maxRetries: config.retryMaxAttempts!, signal, baseDelayMs: 2_000 },
-    );
+    // Use fetch directly for streaming response body
+    const controller = new AbortController();
+    const combined = signal ? combineSignals(signal, controller.signal) : controller.signal;
+    const timeoutMs = config.grokTimeoutMs!;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    // Streaming response → parse SSE
-    if (body.trimStart().startsWith("data:")) {
-      const content = parseSseBody(body);
-      if (content) {
-        return { content, primarySources: extractInlineCitations(content) };
-      }
-    }
-
-    // Non-streaming fallback → parse as JSON
     try {
-      const data = JSON.parse(body);
-      const parsed = parseOpenAiResponse(data);
-      return { content: parsed.content, primarySources: parsed.sources };
-    } catch {
-      // Last resort: treat raw body as content
-      return { content: body, primarySources: [] };
+      const response = await fetch(`${apiUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.openaiApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        signal: combined,
+      });
+
+      if (!response.ok || !response.body) {
+        const errBody = await response.text().catch(() => "");
+        throw new WebAccessError(
+          response.status === 401 || response.status === 403 ? "auth_error" : "network_error",
+          `OpenAI API error ${response.status}: ${errBody.slice(0, 200)}`,
+        );
+      }
+
+      // Stream SSE chunks
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let fullContent = "";
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE lines
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? ""; // keep incomplete line in buffer
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === "data: [DONE]" || trimmed === "data:[DONE]") continue;
+          if (!trimmed.startsWith("data:")) continue;
+          try {
+            const json = JSON.parse(trimmed.slice(5).trim());
+            const delta = json?.choices?.[0]?.delta?.content;
+            if (delta) {
+              fullContent += delta;
+              onChunk?.(fullContent);
+            }
+          } catch { /* skip malformed lines */ }
+        }
+      }
+
+      // Flush remaining buffer
+      if (buffer.trim()) {
+        const trimmed = buffer.trim();
+        if (trimmed.startsWith("data:") && trimmed !== "data:[DONE]" && trimmed !== "data: [DONE]") {
+          try {
+            const json = JSON.parse(trimmed.slice(5).trim());
+            const delta = json?.choices?.[0]?.delta?.content;
+            if (delta) {
+              fullContent += delta;
+              onChunk?.(fullContent);
+            }
+          } catch { /* skip */ }
+        }
+      }
+
+      if (fullContent) {
+        return { content: fullContent, primarySources: extractInlineCitations(fullContent) };
+      }
+      throw new WebAccessError("network_error", "OpenAI returned empty response");
+    } finally {
+      clearTimeout(timeoutId);
     }
   } catch (error) {
+    if (signal?.aborted) throw error;
     throw providerError(error, "OpenAI", signal);
   }
 }
