@@ -1,10 +1,10 @@
 {
   "name": "@daoguademeng/pi-web-access",
-  "version": "0.1.0",
-  "description": "Web access extension for pi — grok_search, exa_search, zhipu_search, docs, fetch, map",
+  "version": "0.2.0",
+  "description": "Web access extension for pi — grok_search, exa_search, zhipu_search, docs, fetch, map + browser-tools skill",
   "author": "daoguademeng",
   "license": "MIT",
-  "keywords": ["pi-package", "pi-extension", "web-search", "web-access"],
+  "keywords": ["pi-package", "pi-extension", "web-search", "web-access", "browser-tools"],
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.74.0",
     "@earendil-works/pi-tui": ">=0.74.0",
@@ -12,6 +12,9 @@
   },
   "dependencies": {
     "@sinclair/typebox": ">=0.34.0"
+  },
+  "scripts": {
+    "postinstall": "cd skills/browser-tools && npm install"
   },
   "pi": {
     "extensions": ["./index.ts"]

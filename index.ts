@@ -300,9 +300,8 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // Bundle the browser-tools skill so it's available to the agent.
-  // The SKILL.md references scripts at ~/.pi/agent/skills/browser-tools/ —
-  // users must run `npm install` there once after installing this package.
+  // Bundle the browser-tools and web-access-manual skills.
+  // To use browser-tools: cd into the skills/browser-tools dir and run `npm install`.
   const __dirname = dirname(fileURLToPath(import.meta.url));
   pi.on("resources_discover", async (_event, _ctx) => {
     return {

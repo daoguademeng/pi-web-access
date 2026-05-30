@@ -10,7 +10,7 @@ Chrome DevTools Protocol via `:9222`. Starts a Chrome instance inheriting the us
 ## Setup (run once)
 
 ```bash
-cd ~/.pi/agent/skills/browser-tools && npm install
+cd skills/browser-tools && npm install
 ```
 
 Requires Google Chrome or Chromium installed natively (not Flatpak/Snap).

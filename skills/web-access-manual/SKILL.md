@@ -90,7 +90,7 @@ web_access action: "fetch" url: "https://github.com/user/repo/blob/main/file.py"
 
 When the answer lives at a known URL (especially JS-rendered pages like X, Instagram, Fansly), skip search and use browser-tools directly. For live data like follower counts or prices, this is faster than searching for third-party articles. Also use when `fetch` returns empty or the page requires login:
 ```bash
-cd ~/.pi/agent/skills/browser-tools
+cd skills/browser-tools
 ./browser-start.js
 ./browser-content.js <URL>
 ```
