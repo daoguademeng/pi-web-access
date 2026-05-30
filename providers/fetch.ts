@@ -12,6 +12,37 @@ import { WebAccessError } from "../types.js";
 import { retryWithBackoff, providerError } from "./shared.js";
 
 // ═══════════════════════════════════════════════════════════════════
+// FlareSolverr — Cloudflare Turnstile bypass
+// ═══════════════════════════════════════════════════════════════════
+
+async function flaresolverrFetch(url: string, config: WebAccessConfig, signal?: AbortSignal): Promise<string | null> {
+  const apiUrl = config.flaresolverrUrl!.replace(/\/$/, "");
+  try {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 90_000);
+    if (signal) signal.addEventListener("abort", () => controller.abort(), { once: true });
+
+    const res = await fetch(`${apiUrl}/v1`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cmd: "request.get", url, maxTimeout: 60000 }),
+      signal: controller.signal,
+    });
+    clearTimeout(tid);
+
+    if (!res.ok) return null;
+    const data = await res.json() as Record<string, unknown>;
+    if (data.status !== "ok" || !data.solution) return null;
+    const solution = data.solution as Record<string, unknown>;
+    const status = solution.status as number;
+    if (status !== 200) return null;
+    return (solution.response as string) || null;
+  } catch {
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // URL normalization
 // ═══════════════════════════════════════════════════════════════════
 
@@ -238,6 +269,18 @@ export async function fetchPage(
         if (wrapped instanceof WebAccessError && wrapped.code !== "network_error") throw wrapped;
         errors.push(`Firecrawl: ${(wrapped as Error).message}`);
       }
+    }
+  }
+
+  // ── FlareSolverr: Cloudflare Turnstile bypass ─────────────────
+  if (config.flaresolverrUrl) {
+    try {
+      const content = await flaresolverrFetch(normalizedUrl, config, signal);
+      if (content) return { url: normalizedUrl, provider: "flaresolverr", content };
+      errors.push("FlareSolverr: returned empty");
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      errors.push(`FlareSolverr: ${(err as Error).message}`);
     }
   }
 
