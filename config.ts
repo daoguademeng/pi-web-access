@@ -41,7 +41,6 @@ export interface WebAccessStoredConfig {
   mapLimit?: number;
   mapTimeoutMs?: number;
   retryMaxAttempts?: number;
-  flaresolverrUrl?: string;
 }
 
 export interface WebAccessConfig {
@@ -72,7 +71,6 @@ export interface WebAccessConfig {
   mapLimit: number;
   mapTimeoutMs: number;
   retryMaxAttempts: number;
-  flaresolverrUrl: string;
 }
 
 export type ConfigScope = "project" | "global";
@@ -107,7 +105,6 @@ const DEFAULTS: WebAccessConfig = {
   mapLimit: 50,
   mapTimeoutMs: 150_000,
   retryMaxAttempts: 3,
-  flaresolverrUrl: "http://localhost:8191",
 };
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -210,7 +207,6 @@ export function loadConfig(cwd?: string): WebAccessConfig {
     mapLimit: readEnvPosInt("MAP_LIMIT", project.mapLimit ?? global.mapLimit, defaults.mapLimit),
     mapTimeoutMs: readEnvPosInt("MAP_TIMEOUT_MS", project.mapTimeoutMs ?? global.mapTimeoutMs, defaults.mapTimeoutMs),
     retryMaxAttempts: readEnvPosInt("RETRY_MAX_ATTEMPTS", project.retryMaxAttempts ?? global.retryMaxAttempts, defaults.retryMaxAttempts),
-    flaresolverrUrl: readEnvStr("FLARESOLVERR_URL", project.flaresolverrUrl ?? global.flaresolverrUrl, defaults.flaresolverrUrl),
   };
 }
 
