@@ -239,14 +239,18 @@ export const webAccessTool = defineTool({
     if (isPartial) {
       const streamText = result.content?.[0]?.type === "text" ? result.content[0].text : "";
       if (streamText && (details as any)?.isStreaming) {
-        // Collapsed: show stats only. User expands with Ctrl+O to see text.
         const lines = streamText.split(/\r?\n/);
         const chars = streamText.length;
+        // Stats header
         let text = theme.fg("success", "●");
         text += " " + theme.fg("accent", details?.action ?? "?");
         if (details?.startedAt) text += " " + theme.fg("dim", formatElapsed(details.startedAt));
         text += " " + theme.fg("muted", `${lines.length} lines, ${chars >= 1000 ? (chars / 1000).toFixed(1) + "k" : chars} chars`);
-        text += "\n" + theme.fg("dim", "  Ctrl+O to expand · live streaming…");
+        // Show last 10 lines as live waterfall preview
+        const preview = lines.slice(-10);
+        for (const l of preview) {
+          text += "\n" + theme.fg("dim", `  ${l.slice(0, 160)}`);
+        }
         return new Text(text, 0, 0);
       }
       let text = theme.fg("toolTitle", "searching");
