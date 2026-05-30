@@ -312,27 +312,20 @@ export const webAccessTool = defineTool({
     const heartbeat = setInterval(() => {
       spinnerIdx++;
       updateStatus(ctx, startedAt);
-    }, 80);
+    }, 100);
 
-    // Streaming callback for grok_search: push incremental text to TUI, throttled
-    let streamThrottleTimer: ReturnType<typeof setTimeout> | null = null;
-    let pendingText = "";
+    // Streaming callback for grok_search: push incremental text to TUI
     const onChunk = _onUpdate && params.action === "grok_search"
       ? (text: string) => {
-          pendingText = text;
-          if (streamThrottleTimer) return; // skip, will fire soon
-          streamThrottleTimer = setTimeout(() => {
-            streamThrottleTimer = null;
-            _onUpdate({
-              content: [{ type: "text", text: pendingText }],
-              details: {
-                action: params.action,
-                query: params.query,
-                startedAt,
-                isStreaming: true,
-              },
-            });
-          }, 300);
+          _onUpdate({
+            content: [{ type: "text", text }],
+            details: {
+              action: params.action,
+              query: params.query,
+              startedAt,
+              isStreaming: true,
+            },
+          });
         }
       : undefined;
 
@@ -382,7 +375,6 @@ export const webAccessTool = defineTool({
       failedCalls++;
       throw _err;
     } finally {
-      if (streamThrottleTimer) clearTimeout(streamThrottleTimer);
       clearInterval(heartbeat);
       activeCalls--;
       if (activeCalls === 0) {
