@@ -239,14 +239,20 @@ export const webAccessTool = defineTool({
     if (isPartial) {
       const streamText = result.content?.[0]?.type === "text" ? result.content[0].text : "";
       if (streamText && (details as any)?.isStreaming) {
-        // Show streaming text with elapsed time
+        // Show streaming text progressively — last 20 lines, full width
         let text = theme.fg("success", "●");
         text += " " + theme.fg("accent", details?.action ?? "?");
         if (details?.startedAt) text += " " + theme.fg("dim", formatElapsed(details.startedAt));
-        // Show last few lines of streaming content
+        text += " " + theme.fg("muted", "streaming…");
         const lines = streamText.split(/\r?\n/);
-        const preview = lines.slice(-6).map(l => l.slice(0, 120)).join("\n");
-        if (preview) text += "\n" + theme.fg("dim", preview);
+        const totalLines = lines.length;
+        const preview = lines.slice(-20);
+        for (const l of preview) {
+          text += "\n" + theme.fg("dim", `  ${l.slice(0, 150)}`);
+        }
+        if (totalLines > 20) {
+          text += "\n" + theme.fg("muted", `  … ${totalLines - 20} more lines`);
+        }
         return new Text(text, 0, 0);
       }
       let text = theme.fg("toolTitle", "searching");
