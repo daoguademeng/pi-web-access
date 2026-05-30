@@ -355,11 +355,11 @@ async function tryOpenAiSearch(
       { role: "system" as const, content: SEARCH_INSTRUCTION },
       { role: "user" as const, content: query },
     ],
-    stream: false,
+    stream: true,
   };
 
   try {
-    const res = await retryWithBackoff(
+    const body = await retryWithBackoff(
       async () => {
         const r = await fetchWithTimeout(
           `${apiUrl}/chat/completions`,
@@ -374,15 +374,28 @@ async function tryOpenAiSearch(
           config.grokTimeoutMs!,
           signal,
         );
-        const body = await r.text();
-        let data: unknown;
-        try { data = JSON.parse(body); } catch { data = null; }
-        return parseOpenAiResponse(data, body);
+        return r.text();
       },
       { maxRetries: config.retryMaxAttempts!, signal, baseDelayMs: 2_000 },
     );
 
-    return { content: res.content, primarySources: res.sources };
+    // Streaming response → parse SSE
+    if (body.trimStart().startsWith("data:")) {
+      const content = parseSseBody(body);
+      if (content) {
+        return { content, primarySources: extractInlineCitations(content) };
+      }
+    }
+
+    // Non-streaming fallback → parse as JSON
+    try {
+      const data = JSON.parse(body);
+      const parsed = parseOpenAiResponse(data);
+      return { content: parsed.content, primarySources: parsed.sources };
+    } catch {
+      // Last resort: treat raw body as content
+      return { content: body, primarySources: [] };
+    }
   } catch (error) {
     throw providerError(error, "OpenAI", signal);
   }
