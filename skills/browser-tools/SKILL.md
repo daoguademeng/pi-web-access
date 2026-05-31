@@ -5,12 +5,12 @@ description: Browser automation via Chrome DevTools Protocol. Use for live data 
 
 # Browser Tools
 
-Chrome DevTools Protocol via `:9222`. Starts a Chrome instance inheriting the user's login cookies, then exposes navigation, JS evaluation, screenshots, and content extraction.
+Chrome DevTools Protocol on a random loopback-only port. By default it copies the user's Chrome profile cookies; this is powerful and risky because any same-user local process that can discover the port can control that browser and use its login state. Prefer `--no-profile` unless login state is explicitly required.
 
 ## Setup (run once)
 
 ```bash
-cd skills/browser-tools && npm install
+cd skills/browser-tools && npm ci --ignore-scripts
 ```
 
 Requires Google Chrome or Chromium installed natively.
@@ -25,7 +25,9 @@ Requires Google Chrome or Chromium installed natively.
 
 Headless is the default. Use `--visible` only when using `browser-pick.js` or debugging visually. Profile copying is also default — only Cookies, Preferences, and Local State are copied. Uses `--password-store=basic` for cookie portability.
 
-Auto-kills any stale Chrome on `:9222` before starting. Only one instance runs at a time.
+⚠️ Security: profile mode contains login cookies. Use `./browser-start.js --no-profile` for untrusted pages, untrusted repositories, CI, shared machines, or whenever login state is unnecessary. Never expose the generated CDP port or cookie values in chat/logs.
+
+The CDP port is random and bound to `127.0.0.1`; helper scripts read it from a `0600` cache file. Only one instance runs at a time.
 
 ## Stop Chrome
 
@@ -69,7 +71,7 @@ Navigates, waits for JS render, extracts readable Markdown via Mozilla Readabili
 ./browser-cookies.js
 ```
 
-Shows all cookies for current tab (domain, path, httpOnly, secure).
+Shows cookie names and metadata for current tab; values are redacted by default. Revealing values requires `--show-values --i-understand-this-leaks-secrets` and should not be pasted into chat, logs, issues, or transcripts.
 
 ## Pick Elements (GUI only)
 

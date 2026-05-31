@@ -80,6 +80,7 @@ web_access action: "fetch" url: "https://github.com/user/repo/blob/main/file.py"
 ```
 
 - GitHub `blob` URLs auto-convert to `raw` (zero API cost)
+- Default safety policy blocks localhost, private-network, link-local, cloud metadata, and `.local` URLs
 - Text files → direct HTTP GET
 - HTML pages → Tavily extract (needs `TAVILY_API_KEY`)
 - PDF/images → error; use `bash curl` instead
@@ -91,10 +92,10 @@ web_access action: "fetch" url: "https://github.com/user/repo/blob/main/file.py"
 When the answer lives at a known URL (especially JS-rendered & login-gated pages), use browser-tools directly. For live data like follower counts or prices, this is faster than other methodes may be stale. Also use when `fetch` returns empty or the page requires login:
 ```bash
 cd skills/browser-tools
-./browser-start.js
+./browser-start.js --no-profile  # safer for untrusted pages; no cookies copied
 ./browser-content.js <URL>
 ```
-It launches Chrome with the user's cookies and extracts rendered content. See browser-tools SKILL.md for full usage.
+It launches Chrome with the user's cookies by default. This is powerful and risky; use `--no-profile` unless login state is required. See browser-tools SKILL.md for full usage.
 
 ## Deep Research Workflow
 

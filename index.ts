@@ -13,10 +13,8 @@ import { webAccessTool, resetRound } from "./tool.js";
 import {
   deleteStoredConfig,
   getConfigPath,
-  loadConfig,
   maskSecret,
   readStoredConfig,
-  validateConfig,
   writeStoredConfig,
   type ConfigScope,
   type WebAccessStoredConfig,
@@ -224,19 +222,33 @@ async function apiKeysMenu(ctx: ConfigUiContext, scope: ConfigScope): Promise<vo
   }
 }
 
+const PROJECT_BLOCKED_ADVANCED_KEYS = new Set<keyof WebAccessStoredConfig>([
+  "grokApiUrl", "openaiApiUrl", "exaBaseUrl", "zhipuApiUrl", "tavilyApiUrl", "firecrawlApiUrl", "context7BaseUrl",
+]);
+
 async function advancedMenu(ctx: ConfigUiContext, scope: ConfigScope): Promise<void> {
   while (true) {
     const stored = readStoredConfig(scope, ctx.cwd);
-    const items: SelectItemFull[] = ADVANCED_FIELDS.map(f => ({
+    const editableFields = scope === "project" ? ADVANCED_FIELDS.filter(f => !PROJECT_BLOCKED_ADVANCED_KEYS.has(f.key)) : ADVANCED_FIELDS;
+    const items: SelectItemFull[] = editableFields.map(f => ({
       value: String(f.key),
       label: fieldChoice(f, stored),
       description: f.description,
       details: `${f.description}\n\nEnv: ${f.env}\nField: ${String(f.key)}\nCurrent: ${fieldValue(f, stored)}\nDefault: ${f.defaultValue ?? "none"}`,
     }));
+    if (scope === "project") {
+      items.unshift({
+        value: "endpoint-note",
+        label: "Endpoint URLs are global-only",
+        description: "Project configs cannot override provider endpoints, to prevent API key exfiltration.",
+        details: "Security policy: project .pi/web-access.json may configure keys, models, limits and timeouts, but provider endpoint URLs are ignored at load time and hidden here.",
+      });
+    }
     items.push({ value: "back", label: "← Back", description: "Return to main menu." });
     const choice = await pickFromList(ctx, `${scopeName(scope)} Advanced`, items);
     if (!choice || choice === "back") return;
-    const field = ADVANCED_FIELDS.find(f => f.key === choice);
+    if (choice === "endpoint-note") continue;
+    const field = editableFields.find(f => f.key === choice);
     if (field) await editField(ctx, scope, field, { ...stored });
   }
 }
@@ -301,7 +313,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   // Bundle the browser-tools and web-access-manual skills.
-  // To use browser-tools: cd into the skills/browser-tools dir and run `npm install`.
+  // Browser-tools dependencies are installed by package postinstall via `npm ci --ignore-scripts`.
   const __dirname = dirname(fileURLToPath(import.meta.url));
   pi.on("resources_discover", async (_event, _ctx) => {
     return {

@@ -87,7 +87,9 @@ async function fetchDocs(libraryId: string, query: string, config: WebAccessConf
     },
     { maxRetries: config.retryMaxAttempts!, signal },
   );
-  return parseContext7Docs(raw, libraryId, query);
+  const parsed = parseContext7Docs(raw, libraryId, query);
+  if (parsed.primarySources.length === 0 && !parsed.content.trim()) throw new WebAccessError("no_results", "Context7 returned no docs for this query.");
+  return parsed;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -100,15 +102,18 @@ export async function context7Docs(query: string, config: WebAccessConfig, optio
   try {
     if (options.libraryId) return await fetchDocs(options.libraryId, query, config, signal);
     const matches = await resolveLibrary(query, config, signal);
-    if (matches.length === 0) return { content: "", primarySources: [] } as SearchResult;
+    if (matches.length === 0) throw new WebAccessError("no_results", "Context7 found no matching libraries.");
     if (matches.length > 1) return matches.slice(0, 10);
     return await fetchDocs(matches[0]!.libraryId, query, config, signal);
   } catch (err) {
     if (signal?.aborted) throw err;
-    // Context7 failed — fallback to Exa if configured
+    if (err instanceof WebAccessError && err.code === "auth_error") throw err;
+    // Context7 failed — fallback to Exa if configured, but mark it explicitly.
     if (config.exaApiKey) {
       try {
         const result = await exaSearch(query, config, {}, signal);
+        result.warnings = [...(result.warnings ?? []), "Context7 failed; results are from Exa fallback, not Context7 docs."];
+        result.content = `> Warning: Context7 failed; using Exa fallback.\n\n${result.content}`;
         return result;
       } catch {
         // Exa also failed — throw original Context7 error

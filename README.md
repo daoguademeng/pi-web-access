@@ -19,7 +19,7 @@
 
 ### `browser-tools` 技能
 
-通过 Chrome DevTools Protocol 实现 headless 浏览器自动化——用于 JS 渲染页面（任何平台）、需登录的内容和实时数据提取。
+通过 Chrome DevTools Protocol 实现 headless 浏览器自动化——用于 JS 渲染页面（任何平台）、需登录的内容和实时数据提取。CDP 端口随机生成并仅绑定 `127.0.0.1`；默认 profile 模式会复制 cookie，登录态敏感，处理不可信页面时请优先使用 `--no-profile`。
 
 | 脚本 | 用途 |
 |------|------|
@@ -42,13 +42,15 @@
 
 优先级：环境变量 > 项目配置 > 全局配置 > 默认值。
 
+安全策略：项目配置不能覆盖 provider endpoint URL（如 `exaBaseUrl`、`tavilyApiUrl` 等），这些高风险 endpoint 只允许来自全局配置/环境变量并经过 HTTPS 与官方 host allowlist 校验，以避免不可信仓库窃取全局 API key。`fetch` / `map` / find-similar 默认阻止 localhost、私网、link-local、metadata 和 `.local` URL。
+
 ## 安装
 
 ```bash
 pi install git:github.com/daoguademeng/pi-web-access
 ```
 
-一步安装。`postinstall` 脚本自动在 `skills/browser-tools/` 中执行 `npm install` 设置 Puppeteer。然后在 pi 中 `/reload`，配置密钥：
+一步安装。`postinstall` 脚本自动在 `skills/browser-tools/` 中执行 `npm ci --ignore-scripts` 设置 Puppeteer 依赖（使用 lockfile，禁用依赖生命周期脚本）。然后在 pi 中 `/reload`，配置密钥：
 
 ```bash
 /web-config
@@ -83,7 +85,7 @@ browser-tools 需要系统原生安装 Google Chrome 或 Chromium（非 Flatpak/
 
 # browser-tools
 cd skills/browser-tools
-./browser-start.js
+./browser-start.js --no-profile # 更安全：不复制 cookie/profile
 ./browser-nav.js https://example.com
 ./browser-content.js https://example.com
 ./browser-stop.js
@@ -104,6 +106,7 @@ pi-web-access/
 │   ├── fetch.ts              #   Tavily / Firecrawl 抓取
 │   ├── tavily.ts             #   Tavily 站点地图
 │   ├── context7.ts           #   Context7 文档查询
+│   ├── security.ts           #   URL/endpoint 安全校验与 SSRF 防护
 │   └── shared.ts             #   共享 HTTP 工具
 ├── skills/
 │   ├── browser-tools/        # Chrome CDP 自动化脚本

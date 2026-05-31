@@ -17,5 +17,8 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# REVIEW
+# REVIEW / PROCESS
 REVIEW.md
+PROCESS.md
+.pi/
+.ace-tool/

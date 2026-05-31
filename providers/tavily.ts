@@ -46,7 +46,7 @@ export async function tavilyMap(
             Authorization: `Bearer ${config.tavilyApiKey}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ url, max_depth: options.maxDepth ?? 1, max_breadth: config.mapMaxBreadth ?? 20, limit: config.mapLimit ?? 50, timeout: Math.round((config.mapTimeoutMs ?? 150_000) / 1000), instructions: options.instructions ?? undefined }),
+          body: JSON.stringify(payload),
         }, config.tavilyTimeoutMs!, signal);
       return res.json();
       },
@@ -81,16 +81,14 @@ export async function tavilySearch(
 
   const raw = await retryWithBackoff(
     async () => {
-      const res = await fetch(endpoint, {
+      const res = await fetchWithTimeout(endpoint, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${config.tavilyApiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ query, max_results: count }),
-        signal,
-      });
-      if (!res.ok) return { results: [] };
+      }, Math.min(config.tavilyTimeoutMs ?? 90_000, 15_000), signal);
       return res.json();
     },
     { maxRetries: 1, signal },
@@ -113,35 +111,29 @@ export async function firecrawlSearch(
   if (!config.firecrawlApiKey) return [];
   const endpoint = `${(config.firecrawlApiUrl ?? "https://api.firecrawl.dev/v2").replace(/\/$/, "")}/search`;
 
-  try {
-    const raw = await retryWithBackoff(
-      async () => {
-        const res = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${config.firecrawlApiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ query, limit: 3 }),
-          signal,
-        });
-        if (!res.ok) return { data: [] };
-        return res.json();
-      },
-      { maxRetries: 1, signal },
-    );
+  const raw = await retryWithBackoff(
+    async () => {
+      const res = await fetchWithTimeout(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.firecrawlApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query, limit: 3 }),
+      }, Math.min(config.firecrawlTimeoutMs ?? 90_000, 15_000), signal);
+      return res.json();
+    },
+    { maxRetries: 1, signal },
+  );
 
-    const results = (raw as Record<string, unknown>)?.data;
-    // Firecrawl returns { data: { web: [...], images: [...] } }
-    const items = results && typeof results === "object"
-      ? (results as Record<string, unknown>).web
-      : undefined;
-    if (!Array.isArray(items)) return [];
-    return items
-      .filter(r => r != null && typeof r === "object")
-      .map(r => ({ url: String((r as Record<string, unknown>).url ?? "") } as Source))
-      .filter(s => s.url.startsWith("http"));
-  } catch {
-    return [];
-  }
+  const results = (raw as Record<string, unknown>)?.data;
+  // Firecrawl returns { data: { web: [...], images: [...] } }
+  const items = results && typeof results === "object"
+    ? (results as Record<string, unknown>).web
+    : undefined;
+  if (!Array.isArray(items)) return [];
+  return items
+    .filter(r => r != null && typeof r === "object")
+    .map(r => ({ url: String((r as Record<string, unknown>).url ?? "") } as Source))
+    .filter(s => s.url.startsWith("http"));
 }

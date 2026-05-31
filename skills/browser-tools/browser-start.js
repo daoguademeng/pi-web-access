@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { existsSync, writeFileSync, readFileSync, unlinkSync, mkdirSync, copyFileSync, rmSync } from "node:fs";
+import { existsSync, writeFileSync, readFileSync, unlinkSync, mkdirSync, copyFileSync, rmSync, chmodSync } from "node:fs";
 import { platform, homedir } from "node:os";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";
+import { browserURL } from "./cdp-url.js";
 
 const HOME = homedir();
 const OS = platform();
@@ -27,6 +28,18 @@ const cacheBase = OS === "darwin"
 		? join(process.env.LOCALAPPDATA || join(HOME, "AppData", "Local"), "browser-tools")
 		: join(HOME, ".cache", "browser-tools");
 const PID_FILE = join(cacheBase, ".pid");
+const PORT_FILE = join(cacheBase, ".port");
+const port = 20_000 + Math.floor(Math.random() * 30_000);
+
+function commandLooksLikeBrowserTools(pid) {
+	if (OS !== "linux") return true;
+	try {
+		const cmd = readFileSync(`/proc/${pid}/cmdline`, "utf8");
+		return cmd.includes("--user-data-dir=" + cacheBase) && cmd.includes("--remote-debugging-port=");
+	} catch {
+		return false;
+	}
+}
 
 // Check if another agent's Chrome is already running
 if (existsSync(PID_FILE)) {
@@ -35,22 +48,29 @@ if (existsSync(PID_FILE)) {
 	try { process.kill(oldPid, 0); alive = true; } catch { /* dead */ }
 	if (alive) {
 		try {
-			const b = await puppeteer.connect({ browserURL: "http://localhost:9222", defaultViewport: null });
+			const b = await puppeteer.connect({ browserURL: browserURL(), defaultViewport: null });
 			const v = await b.version();
 			await b.disconnect();
-			out(`✓ Chrome ${v} already on :9222 (pid ${oldPid})`);
+			out(`✓ Chrome ${v} already at ${browserURL()} (pid ${oldPid})`);
 			process.exit(0);
 		} catch {
-			out(`⚠ PID ${oldPid} alive but CDP unresponsive — cleaning up`);
-			try { process.kill(oldPid, "SIGKILL"); } catch { /* ignore */ }
+			out(`⚠ PID ${oldPid} alive but CDP unresponsive — cleaning up if it matches browser-tools`);
+			if (commandLooksLikeBrowserTools(oldPid)) {
+				try { process.kill(oldPid, "SIGKILL"); } catch { /* ignore */ }
+			} else {
+				out("⚠ Refusing to kill PID that does not look like browser-tools Chrome");
+			}
 		}
 	}
 	try { unlinkSync(PID_FILE); } catch { /* ignore */ }
+	try { unlinkSync(PORT_FILE); } catch { /* ignore */ }
 	await new Promise(r => setTimeout(r, 500));
 }
 
 // Create cache directory (cross-platform, no shell)
-mkdirSync(join(cacheBase, "Default"), { recursive: true });
+mkdirSync(join(cacheBase, "Default"), { recursive: true, mode: 0o700 });
+try { chmodSync(cacheBase, 0o700); } catch { /* ignore */ }
+try { chmodSync(join(cacheBase, "Default"), 0o700); } catch { /* ignore */ }
 try { rmSync(join(cacheBase, "SingletonLock"), { force: true }); } catch { /* ignore */ }
 try { rmSync(join(cacheBase, "SingletonSocket"), { force: true }); } catch { /* ignore */ }
 
@@ -111,7 +131,8 @@ if (!noProfile) {
 const mode = visible ? "" : " (headless)";
 out("  starting Chrome" + mode + "...");
 const chromeArgs = [
-	"--remote-debugging-port=9222",
+	"--remote-debugging-address=127.0.0.1",
+	`--remote-debugging-port=${port}`,
 	`--user-data-dir=${cacheBase}`,
 	"--no-first-run", "--no-default-browser-check",
 	"--password-store=basic",
@@ -125,7 +146,7 @@ proc.unref();
 let connected = false, version = "unknown";
 for (let i = 0; i < 20; i++) {
 	try {
-		const browser = await puppeteer.connect({ browserURL: "http://localhost:9222", defaultViewport: null });
+		const browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${port}`, defaultViewport: null });
 		version = await browser.version();
 		await browser.disconnect();
 		connected = true;
@@ -141,6 +162,8 @@ if (!connected) {
 
 // Record PID for safe multi-agent cleanup
 if (proc.pid) {
-	writeFileSync(PID_FILE, String(proc.pid));
+	writeFileSync(PID_FILE, String(proc.pid), { mode: 0o600 });
+	writeFileSync(PORT_FILE, String(port), { mode: 0o600 });
+	try { chmodSync(PID_FILE, 0o600); chmodSync(PORT_FILE, 0o600); } catch { /* ignore */ }
 }
-out(`✓ Chrome ${version} on :9222${mode}${noProfile ? "" : " + profile"} (pid ${proc.pid})`);
+out(`✓ Chrome ${version} on 127.0.0.1:${port}${mode}${noProfile ? "" : " + profile"} (pid ${proc.pid})`);

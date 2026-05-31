@@ -15,6 +15,7 @@ const RATE_LIMIT_STATUSES = new Set([429]);
 export enum ErrorKind { Retryable, Auth, Fatal, RateLimited }
 
 export function classifyError(error: unknown): ErrorKind {
+  if (error instanceof WebAccessError) return ErrorKind.Fatal;
   if (error instanceof DOMException && error.name === "AbortError") {
     return ErrorKind.Fatal;
   }
@@ -47,11 +48,11 @@ function parseRetryAfter(error: unknown): number | undefined {
   const raw = (headers as Record<string, string>)["retry-after"];
   if (!raw) return undefined;
   const n = Number(raw.trim());
-  if (Number.isFinite(n) && n > 0) return n;
+  if (Number.isFinite(n) && n > 0) return Math.min(n, 60);
   const date = Date.parse(raw.trim());
   if (!Number.isNaN(date)) {
     const delay = (date - Date.now()) / 1000;
-    return delay > 0 ? delay : undefined;
+    return delay > 0 ? Math.min(delay, 60) : undefined;
   }
   return undefined;
 }
@@ -61,9 +62,10 @@ export async function retryWithBackoff<T>(
   options: { maxRetries: number; signal?: AbortSignal; baseDelayMs?: number },
 ): Promise<T> {
   const { maxRetries, signal, baseDelayMs = 1_000 } = options;
+  const maxAttempts = Math.max(1, Math.trunc(maxRetries));
   let lastError: unknown;
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     signal?.throwIfAborted();
 
     try {
@@ -71,14 +73,17 @@ export async function retryWithBackoff<T>(
     } catch (error) {
       lastError = error;
       const kind = classifyError(error);
-      if ((kind === ErrorKind.Retryable || kind === ErrorKind.RateLimited) && attempt < maxRetries) {
+      if ((kind === ErrorKind.Retryable || kind === ErrorKind.RateLimited) && attempt < maxAttempts - 1) {
         const retryAfter = parseRetryAfter(error);
         const delay = retryAfter
           ? retryAfter * 1000
           : baseDelayMs * Math.pow(2, attempt) + Math.random() * 500;
 
         await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(resolve, delay);
+          const timer = setTimeout(() => {
+            if (onAbort) signal?.removeEventListener("abort", onAbort);
+            resolve();
+          }, delay);
           const onAbort = () => {
             clearTimeout(timer);
             reject(new DOMException("Aborted", "AbortError"));
@@ -105,20 +110,21 @@ export function providerError(
   isTimeout = false,
 ): never {
   if (signal?.aborted) throw error;
+  if (error instanceof WebAccessError) throw error;
   if (isTimeout) {
-    throw new WebAccessError("timeout", `${label} request timed out.`, error);
+    throw new WebAccessError("timeout", `${label} request timed out.`);
   }
   const kind = classifyError(error);
   if (kind === ErrorKind.Auth) {
-    throw new WebAccessError("auth_error", `${label} API authentication failed. Check API key.`, error);
+    throw new WebAccessError("auth_error", `${label} API authentication failed. Check API key.`);
   }
   if (kind === ErrorKind.RateLimited) {
-    throw new WebAccessError("rate_limited", `${label} rate limited. Retry later.`, error);
+    throw new WebAccessError("rate_limited", `${label} rate limited. Retry later.`);
   }
   if (kind === ErrorKind.Fatal) {
-    throw new WebAccessError("network_error", `${label} API error: ${(error as Error).message}`, error);
+    throw new WebAccessError("network_error", `${label} API error.`);
   }
-  throw new WebAccessError("network_error", `${label} request failed after retries: ${(error as Error).message}`, error);
+  throw new WebAccessError("network_error", `${label} request failed after retries.`);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -164,8 +170,7 @@ export async function fetchWithTimeout(
     } as FetchWithTimeoutResult;
 
     if (!wrapped.ok) {
-      const body = await wrapped.text().catch(() => "");
-      const err = new Error(`HTTP ${wrapped.status}: ${body.slice(0, 300)}`) as Error & { status: number; headers: Record<string, string> };
+      const err = new Error(`HTTP ${wrapped.status}`) as Error & { status: number; headers: Record<string, string> };
       err.status = wrapped.status;
       err.headers = Object.fromEntries(wrapped.headers.entries());
       throw err;
@@ -178,6 +183,47 @@ export async function fetchWithTimeout(
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function readResponseTextLimited(res: { headers: Headers; text: () => Promise<string>; } | Response, maxBytes = 5_000_000): Promise<string> {
+  const contentLength = res.headers.get("content-length");
+  if (contentLength && Number(contentLength) > maxBytes) {
+    throw new WebAccessError("no_results", `response too large (${contentLength} bytes; limit ${maxBytes}).`);
+  }
+  const body = (res as Response).body;
+  if (!body || typeof body.getReader !== "function") {
+    const text = await res.text();
+    if (new TextEncoder().encode(text).byteLength > maxBytes) {
+      throw new WebAccessError("no_results", `response too large (limit ${maxBytes} bytes).`);
+    }
+    return text;
+  }
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        total += value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel().catch(() => undefined);
+          throw new WebAccessError("no_results", `response too large (limit ${maxBytes} bytes).`);
+        }
+        chunks.push(value);
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(merged);
 }
 
 // ═══════════════════════════════════════════════════════════════════

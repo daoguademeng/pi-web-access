@@ -12,11 +12,27 @@ const cacheBase = OS === "darwin"
 		? join(process.env.LOCALAPPDATA || join(HOME, "AppData", "Local"), "browser-tools")
 		: join(HOME, ".cache", "browser-tools");
 const PID_FILE = join(cacheBase, ".pid");
+const PORT_FILE = join(cacheBase, ".port");
+
+function commandLooksLikeBrowserTools(pid) {
+	if (OS !== "linux") return true;
+	try {
+		const cmd = readFileSync(`/proc/${pid}/cmdline`, "utf8");
+		return cmd.includes("--user-data-dir=" + cacheBase) && cmd.includes("--remote-debugging-port=");
+	} catch {
+		return false;
+	}
+}
 
 if (existsSync(PID_FILE)) {
 	const pid = parseInt(readFileSync(PID_FILE, "utf8").trim());
-	try { process.kill(pid, "SIGTERM"); } catch { /* already dead */ }
+	if (Number.isFinite(pid) && commandLooksLikeBrowserTools(pid)) {
+		try { process.kill(pid, "SIGTERM"); } catch { /* already dead */ }
+	} else {
+		process.stderr.write("⚠ Refusing to kill PID that does not look like browser-tools Chrome\n");
+	}
 	try { unlinkSync(PID_FILE); } catch { /* ignore */ }
+	try { unlinkSync(PORT_FILE); } catch { /* ignore */ }
 }
 
 await new Promise(r => setTimeout(r, 500));

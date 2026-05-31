@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import puppeteer from "puppeteer-core";
+import { browserURL } from "./cdp-url.js";
+import { assertPublicHttpUrl } from "./browser-url-guard.js";
 
 const args = process.argv.slice(2);
 const newTab = args.includes("--new");
@@ -11,19 +13,27 @@ if (!url) {
 	process.exit(1);
 }
 
-const b = await puppeteer.connect({ browserURL: "http://localhost:9222", defaultViewport: null }).catch((e) => {
+let safeUrl;
+try { safeUrl = await assertPublicHttpUrl(url); } catch (e) {
+	process.stderr.write(`✗ ${e.message}\n`);
+	process.exit(1);
+}
+
+const b = await puppeteer.connect({ browserURL: browserURL(), defaultViewport: null }).catch((e) => {
 	process.stderr.write(`✗ ${e.message}\n  Run: browser-start.js\n`);
 	process.exit(1);
 });
 
 if (newTab) {
 	const p = await b.newPage();
-	await p.goto(url, { waitUntil: "domcontentloaded" });
-	process.stdout.write(`✓ Opened: ${url}\n`);
+	await p.goto(safeUrl, { waitUntil: "domcontentloaded" });
+	await assertPublicHttpUrl(p.url());
+	process.stdout.write(`✓ Opened: ${p.url()}\n`);
 } else {
 	const p = (await b.pages()).at(-1);
-	await p.goto(url, { waitUntil: "domcontentloaded" });
-	process.stdout.write(`✓ Navigated to: ${url}\n`);
+	await p.goto(safeUrl, { waitUntil: "domcontentloaded" });
+	await assertPublicHttpUrl(p.url());
+	process.stdout.write(`✓ Navigated to: ${p.url()}\n`);
 }
 
 await b.disconnect();

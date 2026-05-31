@@ -57,7 +57,7 @@ export interface WebAccessParams {
   includeDomains?: string;
 
   // ── zhipu_search ──
-  recencyFilter?: "oneDay" | "oneWeek" | "oneMonth" | "oneYear";
+  recencyFilter?: "oneDay" | "oneWeek" | "oneMonth" | "oneYear" | "noLimit";
 
   // ── docs ──
   libraryId?: string;

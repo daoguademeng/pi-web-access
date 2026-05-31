@@ -3,8 +3,9 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";
+import { browserURL } from "./cdp-url.js";
 
-const b = await puppeteer.connect({ browserURL: "http://localhost:9222", defaultViewport: null }).catch((e) => {
+const b = await puppeteer.connect({ browserURL: browserURL(), defaultViewport: null }).catch((e) => {
 	process.stderr.write(`✗ ${e.message}\n  Run: browser-start.js\n`);
 	process.exit(1);
 });

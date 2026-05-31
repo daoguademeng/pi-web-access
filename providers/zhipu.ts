@@ -89,7 +89,7 @@ export async function zhipuSearch(
   const payload = {
     search_query: query.slice(0, 70),
     search_engine: searchEngine,
-    count: Math.min(Math.max(options.count ?? 10, 1), 50),
+    count: Math.min(Math.max(options.count ?? 10, 1), 20),
     search_intent: true,
     search_recency_filter: options.recencyFilter ?? "noLimit",
     content_size: "medium",
@@ -116,7 +116,9 @@ export async function zhipuSearch(
       { maxRetries: config.retryMaxAttempts!, signal },
     );
 
-    return parseZhipuResponse(raw, query);
+    const parsed = parseZhipuResponse(raw, query);
+    if (parsed.primarySources.length === 0 && !parsed.content.trim()) throw new WebAccessError("no_results", "Zhipu returned no results.");
+    return parsed;
   } catch (err) {
     throw providerError(err, "Zhipu", signal);
   }

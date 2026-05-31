@@ -19,7 +19,7 @@ A single tool with 6 actions:
 
 ### `browser-tools` Skill
 
-Headless Chrome automation via Chrome DevTools Protocol — for JS-rendered pages (X, Instagram, GitHub), login-gated content, and live data extraction.
+Headless Chrome automation via Chrome DevTools Protocol — for JS-rendered pages, login-gated content, and live data extraction. The CDP port is random and bound to `127.0.0.1`; default profile mode copies cookies, so prefer `--no-profile` for untrusted pages.
 
 | Script | Purpose |
 |--------|---------|
@@ -42,13 +42,15 @@ Interactive TUI for managing API keys and settings — no manual JSON editing re
 
 Precedence: environment variables > project config > global config > defaults.
 
+Security policy: project config cannot override provider endpoint URLs (`exaBaseUrl`, `tavilyApiUrl`, etc.). Endpoints are global/env-only and validated against HTTPS + official host allowlists to avoid API-key exfiltration from untrusted repositories. `fetch`, `map`, Exa find-similar, and browser navigation block localhost/private/link-local/metadata/`.local` URLs by default.
+
 ## Install
 
 ```bash
 pi install git:github.com/daoguademeng/pi-web-access
 ```
 
-This is a single-step install. The `postinstall` script automatically runs `npm install` in `skills/browser-tools/` to set up Puppeteer. Then `/reload` in pi, and configure your keys:
+This is a single-step install. The `postinstall` script automatically runs `npm ci --ignore-scripts` in `skills/browser-tools/` to set up Puppeteer using the lockfile without dependency lifecycle scripts. Then `/reload` in pi, and configure your keys:
 
 ```bash
 /web-config
@@ -83,7 +85,7 @@ Alternatively, use environment variables:
 
 # browser-tools
 cd skills/browser-tools
-./browser-start.js
+./browser-start.js --no-profile # safer: fresh profile, no cookies
 ./browser-nav.js https://example.com
 ./browser-content.js https://example.com
 ./browser-stop.js
@@ -104,6 +106,7 @@ pi-web-access/
 │   ├── fetch.ts              #   Tavily / Firecrawl fetch
 │   ├── tavily.ts             #   Tavily site map
 │   ├── context7.ts           #   Context7 docs lookup
+│   ├── security.ts           #   URL/endpoint safety checks and SSRF guard
 │   └── shared.ts             #   Shared HTTP utilities
 ├── skills/
 │   ├── browser-tools/        # Chrome CDP automation scripts

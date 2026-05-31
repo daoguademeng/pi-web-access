@@ -6,15 +6,21 @@
   "license": "MIT",
   "keywords": ["pi-package", "pi-extension", "web-search", "web-access", "browser-tools"],
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.74.0",
-    "@earendil-works/pi-tui": ">=0.74.0",
-    "@earendil-works/pi-ai": ">=0.74.0"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "@earendil-works/pi-ai": "*",
+    "typebox": "*"
   },
-  "dependencies": {
-    "@sinclair/typebox": ">=0.34.0"
-  },
+  "dependencies": {},
   "scripts": {
-    "postinstall": "cd skills/browser-tools && npm install"
+    "postinstall": "cd skills/browser-tools && npm ci --ignore-scripts",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --skipLibCheck --types node --strict false tool.ts providers/*.ts config.ts types.ts tests/*.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
   },
   "pi": {
     "extensions": ["./index.ts"]

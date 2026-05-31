@@ -59,53 +59,6 @@ export function extractInlineCitations(content: string): Source[] {
   return sources;
 }
 
-function normalizeCitation(item: unknown): Source | null {
-  if (typeof item === "string") {
-    const trimmed = item.trim();
-    if (!trimmed.startsWith("http")) return null;
-    return { url: trimmed };
-  }
-  if (!item || typeof item !== "object") return null;
-  const c = item as Record<string, unknown>;
-  const url = typeof c.url === "string" ? c.url
-    : typeof c.href === "string" ? c.href
-    : typeof c.link === "string" ? c.link
-    : undefined;
-  if (!url || typeof url !== "string" || !url.startsWith("http")) return null;
-  const source: Source = { url };
-  const title = typeof c.title === "string" ? c.title
-    : typeof c.name === "string" ? c.name
-    : typeof c.label === "string" ? c.label
-    : undefined;
-  if (title?.trim()) source.title = title.trim();
-  return source;
-}
-
-function collectCitations(data: Record<string, unknown>): Source[] {
-  const seen = new Set<string>();
-  const sources: Source[] = [];
-  const addSource = (item: unknown) => {
-    const normalized = normalizeCitation(item);
-    if (normalized && !seen.has(normalized.url)) {
-      seen.add(normalized.url);
-      sources.push(normalized);
-    }
-  };
-  const topCitations = data.citations;
-  if (Array.isArray(topCitations)) topCitations.forEach(addSource);
-  const choices = Array.isArray(data.choices) ? data.choices : [];
-  for (const choice of choices) {
-    if (!choice || typeof choice !== "object") continue;
-    const ch = choice as Record<string, unknown>;
-    const msg = ch.message;
-    if (msg && typeof msg === "object") {
-      const m = msg as Record<string, unknown>;
-      if (Array.isArray(m.citations)) m.citations.forEach(addSource);
-    }
-  }
-  return sources;
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // Response Parsing
 // ═══════════════════════════════════════════════════════════════════
@@ -159,55 +112,6 @@ export function parseXaiResponse(data: unknown): { content: string; sources: Sou
   return { content: textParts.join("\n\n").trim(), sources: sourceList };
 }
 
-export function parseOpenAiResponse(data: unknown, rawBody?: string): { content: string; sources: Source[] } {
-  if (rawBody && !data) {
-    const sseContent = parseSseBody(rawBody);
-    if (sseContent) {
-      return { content: sseContent, sources: extractInlineCitations(sseContent) };
-    }
-  }
-
-  if (!data || typeof data !== "object") {
-    throw new WebAccessError("network_error", "Unexpected OpenAI-compatible response format");
-  }
-
-  const obj = data as Record<string, unknown>;
-  const choices = Array.isArray(obj.choices) ? obj.choices : [];
-  let content = "";
-
-  for (const choice of choices) {
-    if (!choice || typeof choice !== "object") continue;
-    const message = (choice as Record<string, unknown>).message;
-    if (!message || typeof message !== "object") continue;
-    const msg = message as Record<string, unknown>;
-    if (typeof msg.content === "string") content = msg.content;
-  }
-
-  let sources = collectCitations(obj);
-  if (sources.length === 0 && content) {
-    sources = extractInlineCitations(content);
-  }
-
-  return { content, sources };
-}
-
-function parseSseBody(body: string): string | null {
-  if (!body.trimStart().startsWith("data:")) return null;
-  const parts: string[] = [];
-  for (const line of body.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed === "data: [DONE]" || trimmed === "data:[DONE]") continue;
-    if (trimmed.startsWith("data:")) {
-      try {
-        const json = JSON.parse(trimmed.slice(5).trim());
-        const delta = json?.choices?.[0]?.delta;
-        if (delta?.content) parts.push(delta.content);
-      } catch { /* skip */ }
-    }
-  }
-  return parts.length > 0 ? parts.join("") : null;
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // Main search + discovery helpers
 // ═══════════════════════════════════════════════════════════════════
@@ -244,13 +148,14 @@ async function searchMain(query: string, config: WebAccessConfig, signal?: Abort
   );
 }
 
-async function discoverAdditional(query: string, count: number, config: WebAccessConfig, signal?: AbortSignal): Promise<Source[]> {
+async function discoverAdditional(query: string, count: number, config: WebAccessConfig, signal?: AbortSignal): Promise<{ sources: Source[]; warnings: string[] }> {
   const tavilyCount = Math.ceil(count * 0.6);
   const [tavily, firecrawl] = await Promise.allSettled([
     tavilySearch(query, tavilyCount, config, signal),
     firecrawlSearch(query, config, signal),
   ]);
   const sources: Source[] = [];
+  const warnings: string[] = [];
   const seen = new Set<string>();
   const addSource = (s: Source) => {
     if (!seen.has(s.url)) {
@@ -259,8 +164,10 @@ async function discoverAdditional(query: string, count: number, config: WebAcces
     }
   };
   if (tavily.status === "fulfilled") for (const s of tavily.value) addSource(s);
+  else warnings.push(`Tavily additional discovery failed: ${tavily.reason instanceof WebAccessError ? tavily.reason.code : "network_error"}`);
   if (firecrawl.status === "fulfilled") for (const s of firecrawl.value) addSource(s);
-  return sources;
+  else warnings.push(`Firecrawl additional discovery failed: ${firecrawl.reason instanceof WebAccessError ? firecrawl.reason.code : "network_error"}`);
+  return { sources, warnings };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -282,7 +189,7 @@ export async function grokSearch(
     searchMain(timedQuery, config, signal, onChunk),
     additionalSources > 0
       ? discoverAdditional(query, additionalSources, config, signal)
-      : Promise.resolve([] as Source[]),
+      : Promise.resolve({ sources: [] as Source[], warnings: [] as string[] }),
   ]);
 
   // Unwrap main result
@@ -290,16 +197,21 @@ export async function grokSearch(
   const result = mainResult.value;
 
   // Attach discovery — dedup against primarySources and within discovery
-  if (discovered.status === "fulfilled" && discovered.value.length > 0) {
-    const primaryUrls = new Set(result.primarySources.map(s => s.url));
-    const deduped: Source[] = [];
-    const seen = new Set<string>();
-    for (const s of discovered.value) {
-      if (primaryUrls.has(s.url) || seen.has(s.url)) continue;
-      seen.add(s.url);
-      deduped.push(s);
+  if (discovered.status === "fulfilled") {
+    if (discovered.value.warnings.length > 0) result.warnings = [...(result.warnings ?? []), ...discovered.value.warnings];
+    if (discovered.value.sources.length > 0) {
+      const primaryUrls = new Set(result.primarySources.map(s => s.url));
+      const deduped: Source[] = [];
+      const seen = new Set<string>();
+      for (const s of discovered.value.sources) {
+        if (primaryUrls.has(s.url) || seen.has(s.url)) continue;
+        seen.add(s.url);
+        deduped.push(s);
+      }
+      if (deduped.length > 0) result.additionalSources = deduped;
     }
-    if (deduped.length > 0) result.additionalSources = deduped;
+  } else {
+    result.warnings = [...(result.warnings ?? []), "Additional source discovery failed."];
   }
 
   return result;
@@ -341,6 +253,7 @@ async function tryXaiSearch(
     );
 
     const parsed = parseXaiResponse(res);
+    if (!parsed.content.trim() && parsed.sources.length === 0) throw new WebAccessError("no_results", "xAI returned no usable results.");
     return { content: parsed.content, primarySources: parsed.sources };
   } catch (error) {
     throw providerError(error, "xAI", signal);
@@ -368,81 +281,99 @@ async function tryOpenAiSearch(
     const controller = new AbortController();
     const combined = signal ? combineSignals(signal, controller.signal) : controller.signal;
     const timeoutMs = config.grokTimeoutMs!;
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    let timedOut = false;
+    const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
 
     try {
-      const response = await fetch(`${apiUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${config.openaiApiKey}`,
-          "Content-Type": "application/json",
+      const response = await retryWithBackoff(
+        async () => {
+          const r = await fetch(`${apiUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${config.openaiApiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+            signal: combined,
+          });
+          if (!r.ok || !r.body) {
+            const err = new Error(`HTTP ${r.status}`) as Error & { status: number; headers: Record<string, string> };
+            err.status = r.status;
+            err.headers = Object.fromEntries(r.headers.entries());
+            throw err;
+          }
+          return r;
         },
-        body: JSON.stringify(payload),
-        signal: combined,
-      });
-
-      if (!response.ok || !response.body) {
-        const errBody = await response.text().catch(() => "");
-        throw new WebAccessError(
-          response.status === 401 || response.status === 403 ? "auth_error" : "network_error",
-          `OpenAI API error ${response.status}: ${errBody.slice(0, 200)}`,
-        );
-      }
+        { maxRetries: config.retryMaxAttempts!, signal: combined, baseDelayMs: 2_000 },
+      );
 
       // Stream SSE chunks
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let fullContent = "";
+      const maxStreamChars = 500_000;
       let buffer = "";
+      let eventDataLines: string[] = [];
+      const processSseData = (data: string) => {
+        const trimmed = data.trim();
+        if (!trimmed || trimmed === "[DONE]") return;
+        try {
+          const json = JSON.parse(trimmed);
+          const delta = json?.choices?.[0]?.delta?.content;
+          if (delta) {
+            fullContent += delta;
+            if (fullContent.length > maxStreamChars) throw new WebAccessError("no_results", "OpenAI response exceeded streaming buffer limit.");
+            onChunk?.(delta);
+          }
+        } catch { /* skip malformed events */ }
+      };
+      const flushEvent = () => {
+        if (eventDataLines.length === 0) return;
+        processSseData(eventDataLines.join("\n"));
+        eventDataLines = [];
+      };
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
 
-        // Process complete SSE lines
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? ""; // keep incomplete line in buffer
+          // Process complete SSE lines. Supports standard multi-line data events.
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? ""; // keep incomplete line in buffer
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed === "data: [DONE]" || trimmed === "data:[DONE]") continue;
-          if (!trimmed.startsWith("data:")) continue;
-          try {
-            const json = JSON.parse(trimmed.slice(5).trim());
-            const delta = json?.choices?.[0]?.delta?.content;
-            if (delta) {
-              fullContent += delta;
-              onChunk?.(fullContent);
-            }
-          } catch { /* skip malformed lines */ }
+          for (const line of lines) {
+            const trimmed = line.trimEnd();
+            if (!trimmed) { flushEvent(); continue; }
+            if (trimmed.startsWith(":")) continue;
+            if (trimmed.startsWith("data:")) eventDataLines.push(trimmed.slice(5).trimStart());
+          }
         }
-      }
 
-      // Flush remaining buffer
-      if (buffer.trim()) {
-        const trimmed = buffer.trim();
-        if (trimmed.startsWith("data:") && trimmed !== "data:[DONE]" && trimmed !== "data: [DONE]") {
-          try {
-            const json = JSON.parse(trimmed.slice(5).trim());
-            const delta = json?.choices?.[0]?.delta?.content;
-            if (delta) {
-              fullContent += delta;
-              onChunk?.(fullContent);
-            }
-          } catch { /* skip */ }
+        if (buffer.trim()) {
+          const trimmed = buffer.trimEnd();
+          if (trimmed.startsWith("data:")) eventDataLines.push(trimmed.slice(5).trimStart());
         }
-      }
+        flushEvent();
 
-      if (fullContent) {
-        return { content: fullContent, primarySources: extractInlineCitations(fullContent) };
+        if (fullContent) {
+          return { content: fullContent, primarySources: extractInlineCitations(fullContent) };
+        }
+        throw new WebAccessError("network_error", "OpenAI returned empty response");
+      } catch (streamErr) {
+        if (timedOut) throw new WebAccessError("timeout", "OpenAI request timed out.");
+        throw streamErr;
+      } finally {
+        await reader.cancel().catch(() => undefined);
+        reader.releaseLock();
       }
-      throw new WebAccessError("network_error", "OpenAI returned empty response");
     } finally {
       clearTimeout(timeoutId);
     }
   } catch (error) {
     if (signal?.aborted) throw error;
-    throw providerError(error, "OpenAI", signal);
+    if (error instanceof WebAccessError) throw error;
+    throw providerError(error, "OpenAI", signal, error instanceof DOMException && error.name === "AbortError");
   }
 }

@@ -9,7 +9,7 @@
 import type { WebAccessConfig } from "../config.js";
 import type { FetchResult } from "../types.js";
 import { WebAccessError } from "../types.js";
-import { retryWithBackoff, providerError } from "./shared.js";
+import { retryWithBackoff, providerError, fetchWithTimeout, readResponseTextLimited } from "./shared.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // URL normalization
@@ -59,21 +59,21 @@ function isBinary(ct: string): boolean {
 
 async function sniffContentType(url: string, config: WebAccessConfig, signal?: AbortSignal): Promise<string | null> {
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       method: "GET",
       headers: { Range: "bytes=0-511" },
-      signal,
-    });
+    }, Math.min(config.mapTimeoutMs ?? 30_000, 30_000), signal);
     if (!res.ok) return null;
     const ct = res.headers.get("content-type");
     if (ct) return ct;
     // Peek at first bytes
-    const buf = new Uint8Array(await res.arrayBuffer());
+    const textSample = await readResponseTextLimited(res, 512);
+    const buf = new TextEncoder().encode(textSample);
     // Binary check
     for (const byte of buf) {
       if (byte === 0) return "application/octet-stream";
     }
-    const text = new TextDecoder().decode(buf.slice(0, 100));
+    const text = textSample.slice(0, 100);
     if (text.trimStart().startsWith("<!DOCTYPE") || text.trimStart().startsWith("<html")) return "text/html";
     if (text.trimStart().startsWith("{")) return "application/json";
     return "text/plain";
@@ -96,21 +96,14 @@ async function tavilyExtract(
 
   const raw = await retryWithBackoff(
     async () => {
-      const res = await fetch(endpoint, {
+      const res = await fetchWithTimeout(endpoint, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${config.tavilyApiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ urls: [url], format: "markdown" }),
-        signal,
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        const err = new Error(`Tavily HTTP ${res.status}: ${body.slice(0, 300)}`) as Error & { status: number };
-        err.status = res.status;
-        throw err;
-      }
+      }, config.tavilyTimeoutMs!, signal);
       return res.json();
     },
     { maxRetries: config.retryMaxAttempts!, signal },
@@ -138,21 +131,14 @@ async function firecrawlScrape(
 
   const raw = await retryWithBackoff(
     async () => {
-      const res = await fetch(endpoint, {
+      const res = await fetchWithTimeout(endpoint, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${config.firecrawlApiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ url, formats: ["markdown"], timeout: 60_000 }),
-        signal,
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        const err = new Error(`Firecrawl HTTP ${res.status}: ${body.slice(0, 300)}`) as Error & { status: number };
-        err.status = res.status;
-        throw err;
-      }
+      }, config.firecrawlTimeoutMs!, signal);
       return res.json();
     },
     { maxRetries: config.retryMaxAttempts!, signal },
@@ -180,7 +166,7 @@ export async function fetchPage(
   // ── HEAD pre-check ──────────────────────────────────────────────
   let contentType: string | null = null;
   try {
-    const headRes = await fetch(normalizedUrl, { method: "HEAD", signal });
+    const headRes = await fetchWithTimeout(normalizedUrl, { method: "HEAD", redirect: "error" }, Math.min(config.mapTimeoutMs ?? 30_000, 30_000), signal);
     contentType = headRes.headers.get("content-type") ?? null;
   } catch {
     // HEAD failed — try byte-range sniffing
@@ -198,11 +184,9 @@ export async function fetchPage(
   // ── Direct text fetch ──────────────────────────────────────────
   if (contentType && isDirectText(contentType) && !contentType.startsWith("text/html")) {
     try {
-      const res = await fetch(normalizedUrl, { signal });
-      if (res.ok) {
-        const text = await res.text();
-        return { url: normalizedUrl, provider: "direct", content: text };
-      }
+      const res = await fetchWithTimeout(normalizedUrl, { redirect: "error" }, Math.min(config.mapTimeoutMs ?? 30_000, 30_000), signal);
+      const text = await readResponseTextLimited(res as unknown as Response);
+      return { url: normalizedUrl, provider: "direct", content: text };
     } catch (err) {
       if (signal?.aborted) throw err;
     }
@@ -218,7 +202,7 @@ export async function fetchPage(
       errors.push("Tavily: returned empty");
     } catch (err) {
       if (signal?.aborted) throw err;
-      try { throw providerError(err, "Tavily" as never, signal); } catch (wrapped) {
+      try { throw providerError(err, "Tavily", signal); } catch (wrapped) {
         if (wrapped instanceof WebAccessError && wrapped.code === "auth_error") throw wrapped;
         if (wrapped instanceof WebAccessError && wrapped.code !== "network_error") throw wrapped;
         errors.push(`Tavily: ${(wrapped as Error).message}`);
@@ -233,7 +217,7 @@ export async function fetchPage(
       errors.push("Firecrawl: returned empty");
     } catch (err) {
       if (signal?.aborted) throw err;
-      try { throw providerError(err, "Firecrawl" as never, signal); } catch (wrapped) {
+      try { throw providerError(err, "Firecrawl", signal); } catch (wrapped) {
         if (wrapped instanceof WebAccessError && wrapped.code === "auth_error") throw wrapped;
         if (wrapped instanceof WebAccessError && wrapped.code !== "network_error") throw wrapped;
         errors.push(`Firecrawl: ${(wrapped as Error).message}`);
@@ -244,16 +228,14 @@ export async function fetchPage(
   if (errors.length === 0) {
     // No provider configured and direct fetch failed — try fetch without timeout
     try {
-      const res = await fetch(normalizedUrl, { signal });
-      if (res.ok) {
-        // Check content type from the actual response
-        const ct = res.headers.get("content-type") ?? "";
-        if (ct && isBinary(ct)) {
-          throw new WebAccessError("no_results", `fetch: binary content (${ct}). Use bash curl.`);
-        }
-        const text = await res.text();
-        return { url: normalizedUrl, provider: "direct", content: text };
+      const res = await fetchWithTimeout(normalizedUrl, { redirect: "error" }, Math.min(config.mapTimeoutMs ?? 30_000, 30_000), signal);
+      // Check content type from the actual response
+      const ct = res.headers.get("content-type") ?? "";
+      if (ct && isBinary(ct)) {
+        throw new WebAccessError("no_results", `fetch: binary content (${ct}). Use bash curl.`);
       }
+      const text = await readResponseTextLimited(res as unknown as Response);
+      return { url: normalizedUrl, provider: "direct", content: text };
     } catch (err) {
       if (signal?.aborted) throw err;
       errors.push(`direct: ${(err as Error).message}`);

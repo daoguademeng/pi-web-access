@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import puppeteer from "puppeteer-core";
+import { browserURL } from "./cdp-url.js";
 
 const code = process.argv.slice(2).join(" ");
 if (!code) {
@@ -8,7 +9,7 @@ if (!code) {
 	process.exit(1);
 }
 
-const b = await puppeteer.connect({ browserURL: "http://localhost:9222", defaultViewport: null }).catch((e) => {
+const b = await puppeteer.connect({ browserURL: browserURL(), defaultViewport: null }).catch((e) => {
 	process.stderr.write(`✗ ${e.message}\n  Run: browser-start.js\n`);
 	process.exit(1);
 });

@@ -7,9 +7,10 @@
  *
  * Precedence: env var > project > global > default
  */
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { assertSafeEndpoint } from "./providers/security.js";
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -130,10 +131,33 @@ function readEnvPosInt(name: string, stored: number | undefined, fallback: numbe
   return maybePosInt(process.env[name]) ?? stored ?? fallback;
 }
 
+function clampPosInt(v: unknown, fallback: number, min = 1, max = 300_000): number | undefined {
+  const n = maybePosInt(v);
+  if (n === undefined) return undefined;
+  return Math.min(Math.max(n, min), max);
+}
+
 function cleanConfig(c: WebAccessStoredConfig): WebAccessStoredConfig {
+  const raw = c as Record<string, unknown>;
   const out: WebAccessStoredConfig = {};
-  for (const [k, v] of Object.entries(c)) {
-    if (v !== undefined && v !== "" && v !== null) (out as any)[k] = v;
+  const strKeys: (keyof WebAccessStoredConfig)[] = [
+    "grokApiKey", "grokApiUrl", "grokModel", "openaiApiKey", "openaiApiUrl", "openaiModel",
+    "exaApiKey", "exaBaseUrl", "zhipuApiKey", "zhipuApiUrl", "zhipuSearchEngine",
+    "tavilyApiKey", "tavilyApiUrl", "firecrawlApiKey", "firecrawlApiUrl",
+    "context7ApiKey", "context7BaseUrl",
+  ];
+  for (const k of strKeys) {
+    const v = maybeStr(raw[k]);
+    if (v !== undefined) (out as Record<string, unknown>)[k] = v;
+  }
+  const numKeys: (keyof WebAccessStoredConfig)[] = [
+    "grokTimeoutMs", "exaTimeoutMs", "zhipuTimeoutMs", "tavilyTimeoutMs", "firecrawlTimeoutMs",
+    "context7TimeoutMs", "mapTimeoutMs", "mapMaxBreadth", "mapLimit", "retryMaxAttempts",
+  ];
+  for (const k of numKeys) {
+    const max = k === "retryMaxAttempts" ? 8 : k === "mapMaxBreadth" || k === "mapLimit" ? 500 : 300_000;
+    const v = clampPosInt(raw[k], 0, 1, max);
+    if (v !== undefined) (out as Record<string, unknown>)[k] = v;
   }
   return out;
 }
@@ -148,8 +172,27 @@ export function getConfigPath(scope: ConfigScope, cwd: string): string {
 
 // ── Read / Write / Delete ─────────────────────────────────────────
 
+const loadedConfigCache = new Map<string, { globalMtime: number; projectMtime: number; config: WebAccessConfig }>();
+
+function fileMtimeMs(path: string): number {
+  try { return statSync(path).mtimeMs; } catch { return 0; }
+}
+
+function hardenConfigPermissions(scope: ConfigScope, cwd: string): void {
+  const fp = getConfigPath(scope, cwd);
+  try {
+    if (scope === "global") chmodSync(join(fp, ".."), 0o700);
+    chmodSync(fp, 0o600);
+  } catch { /* best effort */ }
+}
+
+export function invalidateConfigCache(): void {
+  loadedConfigCache.clear();
+}
+
 export function readStoredConfig(scope: ConfigScope, cwd: string): WebAccessStoredConfig {
   try {
+    hardenConfigPermissions(scope, cwd);
     const raw = JSON.parse(readFileSync(getConfigPath(scope, cwd), "utf-8"));
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
     return cleanConfig(raw as WebAccessStoredConfig);
@@ -160,14 +203,17 @@ export function readStoredConfig(scope: ConfigScope, cwd: string): WebAccessStor
 
 export function writeStoredConfig(scope: ConfigScope, cwd: string, config: WebAccessStoredConfig): string {
   const fp = getConfigPath(scope, cwd);
-  mkdirSync(join(fp, ".."), { recursive: true });
+  mkdirSync(join(fp, ".."), { recursive: true, mode: 0o700 });
   writeFileSync(fp, JSON.stringify(cleanConfig(config), null, 2) + "\n", { encoding: "utf-8", mode: 0o600 });
+  chmodSync(fp, 0o600);
+  invalidateConfigCache();
   return fp;
 }
 
 export function deleteStoredConfig(scope: ConfigScope, cwd: string): string {
   const fp = getConfigPath(scope, cwd);
   rmSync(fp, { force: true });
+  invalidateConfigCache();
   return fp;
 }
 
@@ -175,39 +221,49 @@ export function deleteStoredConfig(scope: ConfigScope, cwd: string): string {
 
 export function loadConfig(cwd?: string): WebAccessConfig {
   const dir = cwd ?? process.cwd();
+  const globalPath = getConfigPath("global", dir);
+  const projectPath = getConfigPath("project", dir);
+  const globalMtime = fileMtimeMs(globalPath);
+  const projectMtime = fileMtimeMs(projectPath);
+  const cacheKey = resolve(dir);
+  const cached = loadedConfigCache.get(cacheKey);
+  if (cached && cached.globalMtime === globalMtime && cached.projectMtime === projectMtime) return cached.config;
+
   const global = readStoredConfig("global", dir);
   const project = readStoredConfig("project", dir);
   const defaults = DEFAULTS;
 
-  return {
+  const config: WebAccessConfig = {
     grokApiKey: readEnvStr("XAI_API_KEY", project.grokApiKey ?? global.grokApiKey, defaults.grokApiKey),
-    grokApiUrl: readEnvStr("XAI_API_URL", project.grokApiUrl ?? global.grokApiUrl, defaults.grokApiUrl),
+    grokApiUrl: assertSafeEndpoint(readEnvStr("XAI_API_URL", global.grokApiUrl, defaults.grokApiUrl), "grokApiUrl"),
     grokModel: readEnvStr("XAI_MODEL", project.grokModel ?? global.grokModel, defaults.grokModel),
     grokTimeoutMs: readEnvPosInt("GROK_TIMEOUT_MS", project.grokTimeoutMs ?? global.grokTimeoutMs, defaults.grokTimeoutMs),
     openaiApiKey: readEnvStr("OPENAI_COMPATIBLE_API_KEY", project.openaiApiKey ?? global.openaiApiKey, defaults.openaiApiKey),
-    openaiApiUrl: readEnvStr("OPENAI_COMPATIBLE_API_URL", project.openaiApiUrl ?? global.openaiApiUrl, defaults.openaiApiUrl),
+    openaiApiUrl: assertSafeEndpoint(readEnvStr("OPENAI_COMPATIBLE_API_URL", global.openaiApiUrl, defaults.openaiApiUrl), "openaiApiUrl"),
     openaiModel: readEnvStr("OPENAI_COMPATIBLE_MODEL", project.openaiModel ?? global.openaiModel, defaults.openaiModel),
     exaApiKey: readEnvStr("EXA_API_KEY", project.exaApiKey ?? global.exaApiKey, defaults.exaApiKey),
-    exaBaseUrl: readEnvStr("EXA_BASE_URL", project.exaBaseUrl ?? global.exaBaseUrl, defaults.exaBaseUrl),
+    exaBaseUrl: assertSafeEndpoint(readEnvStr("EXA_BASE_URL", global.exaBaseUrl, defaults.exaBaseUrl), "exaBaseUrl"),
     exaTimeoutMs: readEnvPosInt("EXA_TIMEOUT_MS", project.exaTimeoutMs ?? global.exaTimeoutMs, defaults.exaTimeoutMs),
     zhipuApiKey: readEnvStr("ZHIPU_API_KEY", project.zhipuApiKey ?? global.zhipuApiKey, defaults.zhipuApiKey),
-    zhipuApiUrl: readEnvStr("ZHIPU_API_URL", project.zhipuApiUrl ?? global.zhipuApiUrl, defaults.zhipuApiUrl),
+    zhipuApiUrl: assertSafeEndpoint(readEnvStr("ZHIPU_API_URL", global.zhipuApiUrl, defaults.zhipuApiUrl), "zhipuApiUrl"),
     zhipuSearchEngine: readEnvStr("ZHIPU_SEARCH_ENGINE", project.zhipuSearchEngine ?? global.zhipuSearchEngine, defaults.zhipuSearchEngine),
     zhipuTimeoutMs: readEnvPosInt("ZHIPU_TIMEOUT_MS", project.zhipuTimeoutMs ?? global.zhipuTimeoutMs, defaults.zhipuTimeoutMs),
     tavilyApiKey: readEnvStr("TAVILY_API_KEY", project.tavilyApiKey ?? global.tavilyApiKey, defaults.tavilyApiKey),
-    tavilyApiUrl: readEnvStr("TAVILY_API_URL", project.tavilyApiUrl ?? global.tavilyApiUrl, defaults.tavilyApiUrl),
+    tavilyApiUrl: assertSafeEndpoint(readEnvStr("TAVILY_API_URL", global.tavilyApiUrl, defaults.tavilyApiUrl), "tavilyApiUrl"),
     tavilyTimeoutMs: readEnvPosInt("TAVILY_TIMEOUT_MS", project.tavilyTimeoutMs ?? global.tavilyTimeoutMs, defaults.tavilyTimeoutMs),
     firecrawlApiKey: readEnvStr("FIRECRAWL_API_KEY", project.firecrawlApiKey ?? global.firecrawlApiKey, defaults.firecrawlApiKey),
-    firecrawlApiUrl: readEnvStr("FIRECRAWL_API_URL", project.firecrawlApiUrl ?? global.firecrawlApiUrl, defaults.firecrawlApiUrl),
+    firecrawlApiUrl: assertSafeEndpoint(readEnvStr("FIRECRAWL_API_URL", global.firecrawlApiUrl, defaults.firecrawlApiUrl), "firecrawlApiUrl"),
     firecrawlTimeoutMs: readEnvPosInt("FIRECRAWL_TIMEOUT_MS", project.firecrawlTimeoutMs ?? global.firecrawlTimeoutMs, defaults.firecrawlTimeoutMs),
     context7ApiKey: readEnvStr("CONTEXT7_API_KEY", project.context7ApiKey ?? global.context7ApiKey, defaults.context7ApiKey),
-    context7BaseUrl: readEnvStr("CONTEXT7_BASE_URL", project.context7BaseUrl ?? global.context7BaseUrl, defaults.context7BaseUrl),
+    context7BaseUrl: assertSafeEndpoint(readEnvStr("CONTEXT7_BASE_URL", global.context7BaseUrl, defaults.context7BaseUrl), "context7BaseUrl"),
     context7TimeoutMs: readEnvPosInt("CONTEXT7_TIMEOUT_MS", project.context7TimeoutMs ?? global.context7TimeoutMs, defaults.context7TimeoutMs),
     mapMaxBreadth: readEnvPosInt("MAP_MAX_BREADTH", project.mapMaxBreadth ?? global.mapMaxBreadth, defaults.mapMaxBreadth),
     mapLimit: readEnvPosInt("MAP_LIMIT", project.mapLimit ?? global.mapLimit, defaults.mapLimit),
     mapTimeoutMs: readEnvPosInt("MAP_TIMEOUT_MS", project.mapTimeoutMs ?? global.mapTimeoutMs, defaults.mapTimeoutMs),
     retryMaxAttempts: readEnvPosInt("RETRY_MAX_ATTEMPTS", project.retryMaxAttempts ?? global.retryMaxAttempts, defaults.retryMaxAttempts),
   };
+  loadedConfigCache.set(cacheKey, { globalMtime, projectMtime, config });
+  return config;
 }
 
 // ── Validation ────────────────────────────────────────────────────

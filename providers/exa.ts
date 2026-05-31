@@ -132,7 +132,9 @@ export async function exaSearch(
       { maxRetries: config.retryMaxAttempts!, signal },
     );
 
-    return parseExaResponse(raw, query);
+    const parsed = parseExaResponse(raw, query);
+    if (parsed.primarySources.length === 0 && !parsed.content.trim()) throw new WebAccessError("no_results", "Exa returned no results.");
+    return parsed;
   } catch (err) {
     throw providerError(err, "Exa", signal);
   }
