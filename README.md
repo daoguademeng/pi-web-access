@@ -122,11 +122,11 @@ pi-web-access/
 
 ## 致谢
 
-- **[konbakuyomu/smartsearch](https://github.com/konbakuyomu/smartsearch)** — `web_access` 工具改编自 smart-search 的多提供商网页研究架构，包括 Grok、Exa、智谱、Context7、Tavily 和 Firecrawl 集成。smart-search 是一款优秀的 CLI 优先研究工具——推荐查看其命令行版本。
+- **[konbakuyomu/smartsearch](https://github.com/konbakuyomu/smartsearch)** — `web_access` 工具改编自 smart-search (对标版本0.12.0) 的多提供商网页研究架构，包括 Grok、Exa、智谱、Context7、Tavily 和 Firecrawl 集成。smart-search 是一款优秀的 CLI 优先研究工具——推荐查看其命令行版本。
 
 - **[badlogic/pi-skills](https://github.com/badlogic/pi-skills/tree/main/browser-tools)** — `browser-tools` 技能源自 pi 的创建者 Mario Zechner（badlogic）。Chrome DevTools Protocol 脚本、SKILL.md 和 headless 浏览器自动化方案均来自官方 pi-skills 仓库。
 
-感谢这两个项目使本 pi 扩展得以实现。
+- **[LinuxDo社区](https://linux.do)**
 
 ## 许可证
 
