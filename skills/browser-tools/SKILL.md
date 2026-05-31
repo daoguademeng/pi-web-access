@@ -1,6 +1,6 @@
 ---
 name: browser-tools
-description: Browser automation via Chrome DevTools Protocol. Use for live data from JS-rendered pages, login-gated content, and real-time extraction from known URLs. Prefer over web_access when you have a specific target URL.
+description: Browser automation via CDP. FIRST CHOICE for live data from JS-rendered pages, login-gated content, and real-time extraction from known URLs. Prefer over web_access when you have a specific target URL. Read this skill BEFORE any "now/current/latest/realtime" query. 
 ---
 
 # Browser Tools

@@ -279,7 +279,7 @@ function contentWithoutSources(text: string): string {
 export const webAccessTool = defineTool({
   name: "web_access",
   label: "Web Access",
-  description: "Internet access, including web search via Grok/Exa/Zhipu, docs lookup via Context7, and page fetching and site mapping via Tavily/Firecrawl.",
+  description: "⚠️ GATE: Is this real-time/now/latest data (prices, follower counts, latest posts)? → no search, use browser-tools. Is the URL known? → no search, use fetch (static) or browser-tools (JS/login). Otherwise: Internet access, including web search via Grok/Exa/Zhipu, docs lookup via Context7, and page fetching and site mapping via Tavily/Firecrawl.",
   promptSnippet: "For web search, docs lookup, page fetching and site mapping",
   promptGuidelines: [
     `For any web-related task, check whether the required URLs are already known:

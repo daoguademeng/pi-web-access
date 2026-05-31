@@ -1,6 +1,6 @@
 ---
 name: web-access-manual
-description: Detailed guide to using the web_access tool. Read this when asked to perform in-depth internet research work.
+description: Detailed guide to using the web_access tool. Read this when asked to perform in-depth internet research work, following the Deep Research Workflow section.
 ---
 
 # Web Access
@@ -93,6 +93,7 @@ When the answer lives at a known URL (especially JS-rendered & login-gated pages
 ```bash
 cd skills/browser-tools
 ./browser-start.js --no-profile  # safer for untrusted pages; no cookies copied
+./browser-start.js  # necessary for login-gated pages; copy user's login cookies
 ./browser-content.js <URL>
 ```
 It launches Chrome with the user's cookies by default. This is powerful and risky; use `--no-profile` unless login state is required. See browser-tools SKILL.md for full usage.
