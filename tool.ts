@@ -201,14 +201,13 @@ export const webAccessTool = defineTool({
   name: "web_access",
   label: "Web Access",
   description: "Internet access, including web search via Grok/Exa/Zhipu, docs lookup via Context7, and page fetching and site mapping via Tavily/Firecrawl.",
-  promptSnippet: "For web search, docs lookup, page fetching and site exploration.",
+  promptSnippet: "For web search, docs lookup, page fetching and site mapping",
   promptGuidelines: [
     `Before initiating any web-related task, check whether the required URLs are already known:
-  - If yes -> Use fetch action (for static pages) or browser-tools skill (for JS-rendered & login-gated ones).
-  - If no -> Use grok/zhipu/exa_search or docs actions to discover the relevant URLs.`,
-    "Use grok_search as the default search action; however, skip it for simple, well-scoped lookups (specific API docs, known domains, factual one-liners). Go directly to zhipu, exa, docs, or fetch as appropriate.",
-    "Use docs exclusively for SDK/API library lookup and documentation retrieval.",
-    "Search is for discovery. Fetch / browser-tools is for **truth** - go directly when you already know the answer URLs. Always fetch at least 2-3 key source URLs before presenting factual claims as answers.",
+  - If yes -> Use \`fetch\` (for static pages) or \`browser-tools\` (for JS-rendered & login-gated ones).
+  - If no -> Use \`grok/zhipu/exa_search\` or \`docs\` to discover the relevant URLs.`,
+    "Use \`grok_search\` as the default search action; however, skip it for simple, well-scoped lookups. Go directly to \`zhipu/exa_search\`, \`docs\`, or \`fetch\` as appropriate.",
+    "Always fetch at least 2-3 key source URLs before presenting factual claims as answers.",
     "Prefer parallel web_access calls: run multiple simultaneously rather than sequentially.",
   ],
   parameters: WebAccessSchema,
