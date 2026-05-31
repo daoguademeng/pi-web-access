@@ -203,7 +203,7 @@ export const webAccessTool = defineTool({
   description: "Internet access, including web search via Grok/Exa/Zhipu, docs lookup via Context7, and page fetching and site mapping via Tavily/Firecrawl.",
   promptSnippet: "For web search, docs lookup, page fetching and site mapping",
   promptGuidelines: [
-    `Before initiating any web-related task, check whether the required URLs are already known:
+    `For any web-related task, check whether the required URLs are already known:
   - If yes -> Use \`fetch\` (for static pages) or \`browser-tools\` (for JS-rendered & login-gated ones).
   - If no -> Use \`grok/zhipu/exa_search\` or \`docs\` to discover the relevant URLs.`,
     "Use \`grok_search\` as the default search action; however, skip it for simple, well-scoped lookups. Go directly to \`zhipu/exa_search\`, \`docs\`, or \`fetch\` as appropriate.",
