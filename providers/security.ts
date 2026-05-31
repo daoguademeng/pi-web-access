@@ -23,7 +23,7 @@ function isBlockedIp(ip: string): boolean {
   if (firstTwo[0] === 172 && firstTwo[1] >= 16 && firstTwo[1] <= 31) return true;
 
   const lower = ip.toLowerCase();
-  if (lower === "::1" || lower === "::") return true;
+  if (lower === "::1" || lower === "::" || lower.startsWith("::ffff:")) return true;
   if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // unique local
   if (lower.startsWith("fe80")) return true; // link local
   if (lower.startsWith("ff")) return true; // multicast
@@ -31,7 +31,8 @@ function isBlockedIp(ip: string): boolean {
 }
 
 function normalizeHost(hostname: string): string {
-  return hostname.trim().replace(/\.$/, "").toLowerCase();
+  const host = hostname.trim().replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
+  return host;
 }
 
 export function assertSafeEndpoint(url: string, field: string): string {

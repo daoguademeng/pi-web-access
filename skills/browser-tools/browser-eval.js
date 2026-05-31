@@ -2,6 +2,7 @@
 
 import puppeteer from "puppeteer-core";
 import { browserURL } from "./cdp-url.js";
+import { installPublicRequestGuard } from "./browser-url-guard.js";
 
 const code = process.argv.slice(2).join(" ");
 if (!code) {
@@ -20,10 +21,22 @@ if (!p) {
 	process.exit(1);
 }
 
+const guard = await installPublicRequestGuard(p);
 const result = await p.evaluate((c) => {
 	const AsyncFunction = (async () => {}).constructor;
 	return new AsyncFunction(`return (${c})`)();
-}, code);
+}, code).catch(async (err) => {
+	const detail = guard.blocked ? `blocked unsafe request to ${guard.blocked.url}: ${guard.blocked.reason}` : err.message;
+	process.stderr.write(`✗ Evaluation failed: ${detail}\n`);
+	await b.disconnect();
+	process.exit(1);
+});
+
+if (guard.blocked) {
+	process.stderr.write(`✗ Evaluation blocked unsafe request to ${guard.blocked.url}: ${guard.blocked.reason}\n`);
+	await b.disconnect();
+	process.exit(1);
+}
 
 if (Array.isArray(result)) {
 	for (let i = 0; i < result.length; i++) {

@@ -137,6 +137,7 @@ export interface FetchWithTimeoutResult {
   text: () => Promise<string>;
   json: () => Promise<unknown>;
   headers: Headers;
+  body: ReadableStream<Uint8Array> | null;
 }
 
 /**
@@ -160,23 +161,15 @@ export async function fetchWithTimeout(
 
   try {
     const res = await fetch(url, { ...init, signal: linkedSignal });
-    // Attach headers to the error for Retry-After extraction
-    const wrapped = {
-      ok: res.ok,
-      status: res.status,
-      text: () => res.text(),
-      json: () => res.json(),
-      headers: res.headers,
-    } as FetchWithTimeoutResult;
 
-    if (!wrapped.ok) {
-      const err = new Error(`HTTP ${wrapped.status}`) as Error & { status: number; headers: Record<string, string> };
-      err.status = wrapped.status;
-      err.headers = Object.fromEntries(wrapped.headers.entries());
+    if (!res.ok) {
+      const err = new Error(`HTTP ${res.status}`) as Error & { status: number; headers: Record<string, string> };
+      err.status = res.status;
+      err.headers = Object.fromEntries(res.headers.entries());
       throw err;
     }
 
-    return wrapped;
+    return res as FetchWithTimeoutResult;
   } catch (error) {
     if (timedOut) throw providerError(error, url, signal, true);
     throw error;

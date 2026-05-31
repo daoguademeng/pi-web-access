@@ -283,7 +283,7 @@ async function runConfigWizard(ctx: ConfigUiContext): Promise<void> {
   while (true) {
     const choice = await pickFromList(ctx, "web-access Config", [
       { value: "global", label: "Global Config (~/.pi/agent/web-access.json)", description: "Applies to all projects; overridable by project config.", details: "Edit global web-access config at ~/.pi/agent/web-access.json. Best for storing shared API keys across projects." },
-      { value: "project", label: "Project Config (.pi/web-access.json)", description: "Only affects current project; overrides global.", details: "Edit project-specific config at .pi/web-access.json. Useful for per-project API keys or custom endpoints." },
+      { value: "project", label: "Project Config (.pi/web-access.json)", description: "Only affects current project; overrides global for allowed fields.", details: "Edit project-specific config at .pi/web-access.json. Useful for per-project API keys, models, limits, and timeouts. Provider endpoint URLs are global-only for security." },
       { value: "clear-global", label: "Clear Global Config", description: "Delete ~/.pi/agent/web-access.json." },
       { value: "clear-project", label: "Clear Project Config", description: "Delete .pi/web-access.json." },
       { value: "exit", label: "Exit", description: "Close config wizard." },

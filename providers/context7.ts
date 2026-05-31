@@ -4,7 +4,7 @@
 import type { WebAccessConfig } from "../config.js";
 import type { SearchResult, Source, LibraryMatch, WebAccessResult } from "../types.js";
 import { WebAccessError } from "../types.js";
-import { retryWithBackoff, providerError, fetchWithTimeout } from "./shared.js";
+import { retryWithBackoff, providerError, fetchWithTimeout, classifyError, ErrorKind } from "./shared.js";
 import { exaSearch } from "./exa.js";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -108,6 +108,8 @@ export async function context7Docs(query: string, config: WebAccessConfig, optio
   } catch (err) {
     if (signal?.aborted) throw err;
     if (err instanceof WebAccessError && err.code === "auth_error") throw err;
+    if (classifyError(err) === ErrorKind.Auth) throw providerError(err, "Context7", signal);
+    if (options.libraryId?.trim()) throw providerError(err, "Context7", signal);
     // Context7 failed — fallback to Exa if configured, but mark it explicitly.
     if (config.exaApiKey) {
       try {

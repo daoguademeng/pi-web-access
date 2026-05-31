@@ -2,7 +2,7 @@
 
 import puppeteer from "puppeteer-core";
 import { browserURL } from "./cdp-url.js";
-import { assertPublicHttpUrl } from "./browser-url-guard.js";
+import { assertPublicHttpUrl, installPublicRequestGuard } from "./browser-url-guard.js";
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
@@ -33,10 +33,13 @@ const b = await puppeteer.connect({ browserURL: browserURL(), defaultViewport: n
 const p = (await b.pages()).at(-1);
 if (!p) { process.stderr.write("✗ No active tab\n"); process.exit(1); }
 
+const guard = await installPublicRequestGuard(p);
 try {
 	await p.goto(safeUrl, { waitUntil: "networkidle2", timeout: 15000 });
+	if (guard.blocked) throw new Error(`blocked unsafe request to ${guard.blocked.url}: ${guard.blocked.reason}`);
 } catch (err) {
-	process.stderr.write(`✗ Navigation failed: ${err.message}\n`);
+	const detail = guard.blocked ? `blocked unsafe request to ${guard.blocked.url}: ${guard.blocked.reason}` : err.message;
+	process.stderr.write(`✗ Navigation failed: ${detail}\n`);
 	await b.disconnect();
 	process.exit(1);
 }

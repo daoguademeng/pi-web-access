@@ -5,7 +5,9 @@
  *   global: ~/.pi/agent/web-access.json
  *   project: .pi/web-access.json
  *
- * Precedence: env var > project > global > default
+ * Precedence: env var > project > global > default.
+ * Security exception: provider endpoint URLs are env/global/default only;
+ * project-level endpoint URLs are ignored to prevent API-key exfiltration.
  */
 import { chmodSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";

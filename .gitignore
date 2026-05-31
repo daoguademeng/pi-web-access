@@ -17,8 +17,9 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# REVIEW / PROCESS
+# REVIEW / PROCESS / local audit notes
 REVIEW.md
 PROCESS.md
+AUDIT_REPORT_6462aaa.md
 .pi/
 .ace-tool/

@@ -325,7 +325,10 @@ async function tryOpenAiSearch(
             if (fullContent.length > maxStreamChars) throw new WebAccessError("no_results", "OpenAI response exceeded streaming buffer limit.");
             onChunk?.(delta);
           }
-        } catch { /* skip malformed events */ }
+        } catch (err) {
+          if (err instanceof WebAccessError) throw err;
+          /* skip malformed events */
+        }
       };
       const flushEvent = () => {
         if (eventDataLines.length === 0) return;

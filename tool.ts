@@ -20,14 +20,63 @@ import { tavilyMap } from "./providers/tavily.js";
 import { validatePublicUrl } from "./providers/security.js";
 
 // ═══════════════════════════════════════════════════════════════════
-// Per-call status. Tool calls can run in parallel; avoid module-level counters.
-// `resetRound` is kept as a compatibility hook for index.ts turn_start.
+// Round-level status aggregation. The pi status bar is a single shared slot,
+// while tool calls can run in parallel. Keep one stable aggregate instead of
+// letting concurrent actions race and flicker the status text.
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-export function resetRound() {}
+type StatusContext = { ui: { setStatus: (key: string, value: string | undefined) => void } };
+const activeCalls = new Map<string, { startedAt: number }>();
+let doneCount = 0;
+let failedCount = 0;
+let statusTimer: ReturnType<typeof setInterval> | undefined;
+let lastStatusCtx: StatusContext | undefined;
 
-function updateStatus(ctx: { ui: { setStatus: (key: string, value: string | undefined) => void } }, action: string, startedAt: number) {
-  const spin = SPINNER[Math.floor((Date.now() / 130) % SPINNER.length)] ?? "·";
-  ctx.ui.setStatus("web-access", `${spin} web_access ${action} · ${formatElapsed(startedAt)}`);
+export function resetRound() {
+  activeCalls.clear();
+  doneCount = 0;
+  failedCount = 0;
+  if (statusTimer) clearInterval(statusTimer);
+  statusTimer = undefined;
+  lastStatusCtx = undefined;
+}
+
+function renderStatus(): string | undefined {
+  const active = activeCalls.size;
+  if (active === 0 && doneCount === 0 && failedCount === 0) return undefined;
+  const failed = failedCount > 0 ? ` · failed ${failedCount}` : "";
+  if (active === 0) return `✓ web_access active 0 · done ${doneCount}${failed}`;
+
+  const oldest = Math.min(...Array.from(activeCalls.values(), v => v.startedAt));
+  const spin = SPINNER[Math.floor((Date.now() / 250) % SPINNER.length)] ?? "·";
+  return `${spin} web_access active ${active} · done ${doneCount}${failed} · ${formatElapsed(oldest)}`;
+}
+
+function refreshStatus(ctx?: StatusContext) {
+  if (ctx) lastStatusCtx = ctx;
+  const target = ctx ?? lastStatusCtx;
+  if (!target) return;
+  target.ui.setStatus("web-access", renderStatus());
+}
+
+function startStatus(ctx: StatusContext, id: string, startedAt: number) {
+  activeCalls.set(id, { startedAt });
+  refreshStatus(ctx);
+  if (!statusTimer) {
+    statusTimer = setInterval(() => refreshStatus(), 1_000);
+  }
+}
+
+function finishStatus(ctx: StatusContext, id: string, succeeded: boolean) {
+  const existed = activeCalls.delete(id);
+  if (existed) {
+    if (succeeded) doneCount++;
+    else failedCount++;
+  }
+  if (activeCalls.size === 0 && statusTimer) {
+    clearInterval(statusTimer);
+    statusTimer = undefined;
+  }
+  refreshStatus(ctx);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -325,12 +374,10 @@ export const webAccessTool = defineTool({
   async execute(_toolCallId, params, signal, _onUpdate, ctx) {
     signal?.throwIfAborted?.();
     const startedAt = Date.now();
+    const statusId = String(_toolCallId);
+    let succeeded = false;
 
-    updateStatus(ctx, String(params.action ?? "?"), startedAt);
-
-    const heartbeat = setInterval(() => {
-      updateStatus(ctx, String(params.action ?? "?"), startedAt);
-    }, 130);
+    startStatus(ctx, statusId, startedAt);
 
     // Streaming callback for grok_search: provider sends deltas; throttle UI updates.
     let streamingText = "";
@@ -394,10 +441,10 @@ export const webAccessTool = defineTool({
         contentText = `${truncation.content}\n\n[Truncated: ${truncation.outputLines} of ${truncation.totalLines} lines. Full content saved to ${tmpPath}.]`;
       }
 
+      succeeded = true;
       return { content: [{ type: "text", text: contentText }], details: { ...details, ...extra } };
     } finally {
-      clearInterval(heartbeat);
-      ctx.ui.setStatus("web-access", `✓ web_access ${String(params.action ?? "?")} · ${formatElapsed(startedAt)}`);
+      finishStatus(ctx, statusId, succeeded);
     }
   },
 });

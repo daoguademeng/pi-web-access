@@ -2,7 +2,7 @@
 
 import puppeteer from "puppeteer-core";
 import { browserURL } from "./cdp-url.js";
-import { assertPublicHttpUrl } from "./browser-url-guard.js";
+import { assertPublicHttpUrl, installPublicRequestGuard } from "./browser-url-guard.js";
 
 const args = process.argv.slice(2);
 const newTab = args.includes("--new");
@@ -24,16 +24,38 @@ const b = await puppeteer.connect({ browserURL: browserURL(), defaultViewport: n
 	process.exit(1);
 });
 
+async function guardedGoto(page, targetUrl, waitUntil) {
+	const guard = await installPublicRequestGuard(page);
+	try {
+		await page.goto(targetUrl, { waitUntil });
+	} catch (err) {
+		if (guard.blocked) throw new Error(`blocked unsafe request to ${guard.blocked.url}: ${guard.blocked.reason}`);
+		throw err;
+	}
+	if (guard.blocked) throw new Error(`blocked unsafe request to ${guard.blocked.url}: ${guard.blocked.reason}`);
+	return await assertPublicHttpUrl(page.url());
+}
+
 if (newTab) {
 	const p = await b.newPage();
-	await p.goto(safeUrl, { waitUntil: "domcontentloaded" });
-	await assertPublicHttpUrl(p.url());
-	process.stdout.write(`✓ Opened: ${p.url()}\n`);
+	try {
+		const finalUrl = await guardedGoto(p, safeUrl, "domcontentloaded");
+		process.stdout.write(`✓ Opened: ${finalUrl}\n`);
+	} catch (err) {
+		process.stderr.write(`✗ Navigation failed: ${err.message}\n`);
+		await b.disconnect();
+		process.exit(1);
+	}
 } else {
 	const p = (await b.pages()).at(-1);
-	await p.goto(safeUrl, { waitUntil: "domcontentloaded" });
-	await assertPublicHttpUrl(p.url());
-	process.stdout.write(`✓ Navigated to: ${p.url()}\n`);
+	try {
+		const finalUrl = await guardedGoto(p, safeUrl, "domcontentloaded");
+		process.stdout.write(`✓ Navigated to: ${finalUrl}\n`);
+	} catch (err) {
+		process.stderr.write(`✗ Navigation failed: ${err.message}\n`);
+		await b.disconnect();
+		process.exit(1);
+	}
 }
 
 await b.disconnect();
