@@ -25,9 +25,10 @@ export async function tavilyMap(
   }
 
   const endpoint = `${(config.tavilyApiUrl ?? "https://api.tavily.com").replace(/\/$/, "")}/map`;
+  const maxDepth = Math.min(Math.max(Math.trunc(options.maxDepth ?? 1), 1), 3);
   const payload = {
     url,
-    max_depth: options.maxDepth ?? 1,
+    max_depth: maxDepth,
     max_breadth: config.mapMaxBreadth ?? 20,
     limit: config.mapLimit ?? 50,
     timeout: Math.round((config.mapTimeoutMs ?? 150_000) / 1000),

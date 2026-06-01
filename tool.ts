@@ -99,7 +99,7 @@ const WebAccessSchema = Type.Object({
   searchDomainFilter: Type.Optional(Type.String({ description: "Comma-separated domain whitelist for zhipu_search." })),
   libraryId: Type.Optional(Type.String({ description: "Context7 library id. Applies to: docs." })),
   instructions: Type.Optional(Type.String({ maxLength: 1_000, description: "Site exploration guidance. Applies to: map." })),
-  maxDepth: Type.Optional(Type.Number({ minimum: 0, maximum: 3, description: "Crawl depth (default 1). Applies to: map." })),
+  maxDepth: Type.Optional(Type.Number({ minimum: 1, maximum: 3, description: "Crawl depth (default 1). Applies to: map." })),
 });
 
 type WebAccessParams = Static<typeof WebAccessSchema>;
@@ -191,7 +191,7 @@ async function executeAction(params: WebAccessParams, cwd: string, signal?: Abor
     }
     case "map": {
       if (!params.url) throw new WebAccessError("invalid_params", "map requires 'url' parameter.");
-      return tavilyMap(await validatePublicUrl(params.url, "map.url"), config, { maxDepth: clampNumber(params.maxDepth, 0, 3, 1), instructions: params.instructions?.trim().slice(0, 1_000) }, signal);
+      return tavilyMap(await validatePublicUrl(params.url, "map.url"), config, { maxDepth: clampNumber(params.maxDepth, 1, 3, 1), instructions: params.instructions?.trim().slice(0, 1_000) }, signal);
     }
     default:
       throw new WebAccessError("invalid_params", `Unknown action: '${params.action}'.`);

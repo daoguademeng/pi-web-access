@@ -11,6 +11,7 @@ import { WebAccessError } from "../types.js";
 import { grokSearch, parseXaiResponse } from "../providers/grok.js";
 import { context7Docs } from "../providers/context7.js";
 import { parseExaResponse } from "../providers/exa.js";
+import { tavilyMap } from "../providers/tavily.js";
 
 test("project endpoint overrides are ignored by loadConfig", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "web-access-test-"));
@@ -68,6 +69,32 @@ test("retryWithBackoff uses maxAttempts semantics", async () => {
     throw err;
   }, { maxRetries: 3, baseDelayMs: 1 }), TypeError);
   assert.equal(attempts, 3);
+});
+
+test("tavilyMap clamps maxDepth to Tavily minimum", async () => {
+  const originalFetch = globalThis.fetch;
+  let payload: Record<string, unknown> | undefined;
+  try {
+    globalThis.fetch = async (_input: string | URL | Request, init?: RequestInit) => {
+      payload = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ base_url: "https://example.com", results: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    await tavilyMap("https://example.com", {
+      tavilyApiKey: "key",
+      tavilyApiUrl: "https://api.tavily.com",
+      tavilyTimeoutMs: 1_000,
+      retryMaxAttempts: 1,
+      mapMaxBreadth: 20,
+      mapLimit: 50,
+      mapTimeoutMs: 150_000,
+    } as any, { maxDepth: 0 });
+    assert.equal(payload?.max_depth, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("providerError includes HTTP status for fatal provider errors", () => {
