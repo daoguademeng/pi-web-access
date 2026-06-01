@@ -13,7 +13,7 @@
 | `grok_search` | 广泛网页搜索 + AI 综合 | xAI Grok / OpenAI 兼容中继 |
 | `exa_search` | 低噪声权威搜索 | Exa |
 | `zhipu_search` | 中文 / 国内 / 实时搜索 | 智谱 |
-| `fetch` | 将网页提取为 Markdown | Tavily / Firecrawl |
+| `fetch` | 将网页提取为 Markdown / 文本 | Direct HTTP / Tavily / Firecrawl |
 | `docs` | SDK / API 文档查询 | Context7 |
 | `map` | 探索站点 URL 结构 | Tavily |
 
@@ -103,7 +103,7 @@ pi-web-access/
 │   ├── grok.ts               #   xAI / OpenAI 兼容
 │   ├── exa.ts                #   Exa 搜索
 │   ├── zhipu.ts              #   智谱搜索
-│   ├── fetch.ts              #   Tavily / Firecrawl 抓取
+│   ├── fetch.ts              #   Direct HTTP / Tavily / Firecrawl 抓取
 │   ├── tavily.ts             #   Tavily 站点地图
 │   ├── context7.ts           #   Context7 文档查询
 │   ├── security.ts           #   URL/endpoint 安全校验与 SSRF 防护

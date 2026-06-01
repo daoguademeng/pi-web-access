@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 import { loadConfig, readStoredConfig, writeStoredConfig } from "../config.js";
 import { assertSafeEndpoint, validatePublicUrl } from "../providers/security.js";
-import { retryWithBackoff, fetchWithTimeout, readResponseTextLimited } from "../providers/shared.js";
+import { retryWithBackoff, fetchWithTimeout, readResponseTextLimited, providerError } from "../providers/shared.js";
 import { WebAccessError } from "../types.js";
 import { grokSearch, parseXaiResponse } from "../providers/grok.js";
 import { context7Docs } from "../providers/context7.js";
@@ -68,6 +68,15 @@ test("retryWithBackoff uses maxAttempts semantics", async () => {
     throw err;
   }, { maxRetries: 3, baseDelayMs: 1 }), TypeError);
   assert.equal(attempts, 3);
+});
+
+test("providerError includes HTTP status for fatal provider errors", () => {
+  const err = new Error("HTTP 400") as Error & { status: number };
+  err.status = 400;
+  assert.throws(
+    () => providerError(err, "Tavily Map"),
+    (error: unknown) => error instanceof WebAccessError && error.message === "Tavily Map API error (HTTP 400).",
+  );
 });
 
 test("xAI parser extracts text and citations", () => {
@@ -137,6 +146,38 @@ test("Context7 explicit libraryId failures do not return unrelated Exa fallback"
     );
     assert.equal(calls.length, 1);
     assert.ok(calls[0]!.includes("context7.com"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Context7 requests propagate caller abort signal to fetch", async () => {
+  const originalFetch = globalThis.fetch;
+  const controller = new AbortController();
+  let sawAbort = false;
+  try {
+    globalThis.fetch = async (_input: string | URL | Request, init?: RequestInit) => {
+      const fetchSignal = init?.signal;
+      assert.ok(fetchSignal instanceof AbortSignal);
+      setTimeout(() => controller.abort(), 0);
+      await new Promise<void>((_resolve, reject) => {
+        fetchSignal.addEventListener("abort", () => {
+          sawAbort = true;
+          reject(new DOMException("Aborted", "AbortError"));
+        }, { once: true });
+        setTimeout(() => reject(new Error("caller abort signal did not reach fetch")), 50);
+      });
+      throw new Error("unreachable");
+    };
+    await assert.rejects(
+      () => context7Docs("install", {
+        context7BaseUrl: "https://context7.com",
+        context7TimeoutMs: 1_000,
+        retryMaxAttempts: 1,
+      } as any, { libraryId: "/reactjs/react.dev" }, controller.signal),
+      (err: unknown) => err instanceof DOMException && err.name === "AbortError",
+    );
+    assert.equal(sawAbort, true);
   } finally {
     globalThis.fetch = originalFetch;
   }

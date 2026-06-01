@@ -13,7 +13,7 @@ A single tool with 6 actions:
 | `grok_search` | Broad web search with AI synthesis | xAI Grok / OpenAI-compatible relay |
 | `exa_search` | Low-noise authoritative search | Exa |
 | `zhipu_search` | Chinese / domestic / realtime search | Zhipu (智谱) |
-| `fetch` | Extract full page text as Markdown | Tavily / Firecrawl |
+| `fetch` | Extract full page text / Markdown | Direct HTTP / Tavily / Firecrawl |
 | `docs` | SDK / API documentation lookup | Context7 |
 | `map` | Explore site URL structure | Tavily |
 
@@ -103,7 +103,7 @@ pi-web-access/
 │   ├── grok.ts               #   xAI / OpenAI-compatible
 │   ├── exa.ts                #   Exa search
 │   ├── zhipu.ts              #   Zhipu search
-│   ├── fetch.ts              #   Tavily / Firecrawl fetch
+│   ├── fetch.ts              #   Direct HTTP / Tavily / Firecrawl fetch
 │   ├── tavily.ts             #   Tavily site map
 │   ├── context7.ts           #   Context7 docs lookup
 │   ├── security.ts           #   URL/endpoint safety checks and SSRF guard

@@ -122,9 +122,11 @@ export function providerError(
     throw new WebAccessError("rate_limited", `${label} rate limited. Retry later.`);
   }
   if (kind === ErrorKind.Fatal) {
-    throw new WebAccessError("network_error", `${label} API error.`);
+    const status = extractStatus(error);
+    throw new WebAccessError("network_error", status ? `${label} API error (HTTP ${status}).` : `${label} API error.`);
   }
-  throw new WebAccessError("network_error", `${label} request failed after retries.`);
+  const status = extractStatus(error);
+  throw new WebAccessError("network_error", status ? `${label} request failed after retries (HTTP ${status}).` : `${label} request failed after retries.`);
 }
 
 // ═══════════════════════════════════════════════════════════════════

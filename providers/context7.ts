@@ -33,7 +33,7 @@ async function resolveLibrary(name: string, config: WebAccessConfig, signal?: Ab
     async () => {
       const headers: Record<string, string> = { Accept: "application/json, text/plain" };
       if (config.context7ApiKey) headers.Authorization = `Bearer ${config.context7ApiKey}`;
-      const res = await fetchWithTimeout(endpoint, { headers, signal }, config.context7TimeoutMs!);
+      const res = await fetchWithTimeout(endpoint, { headers }, config.context7TimeoutMs!, signal);
       const ct = res.headers.get("content-type") ?? "";
       if (ct.includes("application/json")) return res.json();
       const text = await res.text();
@@ -79,7 +79,7 @@ async function fetchDocs(libraryId: string, query: string, config: WebAccessConf
     async () => {
       const headers: Record<string, string> = { Accept: "application/json, text/plain" };
       if (config.context7ApiKey) headers.Authorization = `Bearer ${config.context7ApiKey}`;
-      const res = await fetchWithTimeout(endpoint, { headers, signal }, config.context7TimeoutMs!);
+      const res = await fetchWithTimeout(endpoint, { headers }, config.context7TimeoutMs!, signal);
       const ct = res.headers.get("content-type") ?? "";
       if (ct.includes("application/json")) return res.json();
       const text = await res.text();
