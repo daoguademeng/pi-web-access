@@ -5,17 +5,21 @@ import { existsSync, writeFileSync, readFileSync, unlinkSync, mkdirSync, copyFil
 import { platform, homedir } from "node:os";
 import { join } from "node:path";
 import puppeteer from "puppeteer-core";
-import { browserURL } from "./cdp-url.js";
+import { browserURL, localAccessFlagPath } from "./cdp-url.js";
 
 const HOME = homedir();
 const OS = platform();
+const allowedArgs = new Set(["--no-profile", "--visible", "--allow-localhost"]);
+const invalidArgs = process.argv.slice(2).filter(arg => !allowedArgs.has(arg));
 const noProfile = process.argv.includes("--no-profile");
 const visible = process.argv.includes("--visible");
+const allowLocalhost = process.argv.includes("--allow-localhost");
 
-if (process.argv[2] && !["--no-profile", "--visible"].includes(process.argv[2])) {
-	process.stdout.write("Usage: browser-start.js [--no-profile] [--visible]\n");
-	process.stdout.write("  --no-profile  Fresh profile, no cookies\n");
-	process.stdout.write("  --visible     Show browser window (default: headless)\n");
+if (invalidArgs.length > 0) {
+	process.stdout.write("Usage: browser-start.js [--no-profile] [--visible] [--allow-localhost]\n");
+	process.stdout.write("  --no-profile       Fresh profile, no cookies\n");
+	process.stdout.write("  --visible          Show browser window (default: headless)\n");
+	process.stdout.write("  --allow-localhost  Allow browser helpers to navigate to loopback/local dev URLs\n");
 	process.exit(1);
 }
 
@@ -29,7 +33,20 @@ const cacheBase = OS === "darwin"
 		: join(HOME, ".cache", "browser-tools");
 const PID_FILE = join(cacheBase, ".pid");
 const PORT_FILE = join(cacheBase, ".port");
+const LOCALHOST_FLAG_FILE = localAccessFlagPath();
 const port = 20_000 + Math.floor(Math.random() * 30_000);
+
+function setLocalhostAccessFlag(enabled) {
+	try { mkdirSync(cacheBase, { recursive: true, mode: 0o700 }); } catch { /* ignore */ }
+	if (enabled) {
+		writeFileSync(LOCALHOST_FLAG_FILE, "enabled\n", { mode: 0o600 });
+		try { chmodSync(LOCALHOST_FLAG_FILE, 0o600); } catch { /* ignore */ }
+		out("  localhost access: enabled (--allow-localhost)");
+	} else {
+		try { unlinkSync(LOCALHOST_FLAG_FILE); } catch { /* ignore */ }
+		out("  localhost access: blocked (default)");
+	}
+}
 
 function commandLooksLikeBrowserTools(pid) {
 	if (OS !== "linux") return true;
@@ -51,6 +68,7 @@ if (existsSync(PID_FILE)) {
 			const b = await puppeteer.connect({ browserURL: browserURL(), defaultViewport: null });
 			const v = await b.version();
 			await b.disconnect();
+			setLocalhostAccessFlag(allowLocalhost);
 			out(`✓ Chrome ${v} already at ${browserURL()} (pid ${oldPid})`);
 			process.exit(0);
 		} catch {
@@ -73,6 +91,7 @@ try { chmodSync(cacheBase, 0o700); } catch { /* ignore */ }
 try { chmodSync(join(cacheBase, "Default"), 0o700); } catch { /* ignore */ }
 try { rmSync(join(cacheBase, "SingletonLock"), { force: true }); } catch { /* ignore */ }
 try { rmSync(join(cacheBase, "SingletonSocket"), { force: true }); } catch { /* ignore */ }
+if (!allowLocalhost) { try { unlinkSync(LOCALHOST_FLAG_FILE); } catch { /* ignore */ } }
 
 const installHints = {
 	linux: "Install: sudo apt install google-chrome-stable  or  sudo pacman -S google-chrome",
@@ -155,10 +174,13 @@ for (let i = 0; i < 20; i++) {
 }
 
 if (!connected) {
+	if (allowLocalhost) { try { unlinkSync(LOCALHOST_FLAG_FILE); } catch { /* ignore */ } }
 	out("✗ Chrome did not start");
 	out(`  If a stale instance exists: rm ${join(cacheBase, ".pid")}`);
 	process.exit(1);
 }
+
+setLocalhostAccessFlag(allowLocalhost);
 
 // Record PID for safe multi-agent cleanup
 if (proc.pid) {

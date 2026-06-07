@@ -12,6 +12,7 @@ import { grokSearch, parseXaiResponse } from "../providers/grok.js";
 import { context7Docs } from "../providers/context7.js";
 import { parseExaResponse } from "../providers/exa.js";
 import { tavilyMap } from "../providers/tavily.js";
+import { assertPublicHttpUrl as assertBrowserPublicHttpUrl } from "../skills/browser-tools/browser-url-guard.js";
 
 test("project endpoint overrides are ignored by loadConfig", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "web-access-test-"));
@@ -59,6 +60,16 @@ test("public URL guard blocks local/private URLs", async () => {
   await assert.rejects(() => validatePublicUrl("http://[::1]/", "fetch.url"), WebAccessError);
   await assert.rejects(() => validatePublicUrl("http://[::ffff:127.0.0.1]/", "fetch.url"), WebAccessError);
   await assert.rejects(() => validatePublicUrl("http://metadata.google.internal", "fetch.url"), WebAccessError);
+});
+
+test("browser-tools URL guard allows only loopback when localhost gate is enabled", async () => {
+  await assert.rejects(() => assertBrowserPublicHttpUrl("http://localhost:5173/", { allowLocalhost: false }), /local\/private URLs are blocked/);
+  assert.equal(await assertBrowserPublicHttpUrl("http://localhost:5173/", { allowLocalhost: true }), "http://localhost:5173/");
+  assert.equal(await assertBrowserPublicHttpUrl("http://app.localhost:5173/path", { allowLocalhost: true }), "http://app.localhost:5173/path");
+  assert.equal(await assertBrowserPublicHttpUrl("http://127.0.0.1:5173/path", { allowLocalhost: true }), "http://127.0.0.1:5173/path");
+  assert.equal(await assertBrowserPublicHttpUrl("http://[::1]:5173/", { allowLocalhost: true }), "http://[::1]:5173/");
+  await assert.rejects(() => assertBrowserPublicHttpUrl("http://192.168.1.1/", { allowLocalhost: true }), /local\/private IP URLs are blocked/);
+  await assert.rejects(() => assertBrowserPublicHttpUrl("http://metadata.google.internal/", { allowLocalhost: true }), /metadata URLs are blocked/);
 });
 
 test("retryWithBackoff uses maxAttempts semantics", async () => {

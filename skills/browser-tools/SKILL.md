@@ -18,14 +18,17 @@ Requires Google Chrome or Chromium installed natively.
 ## Start Chrome
 
 ```bash
-./browser-start.js              # Headless with user profile (default)
-./browser-start.js --no-profile # Fresh profile, no cookies
-./browser-start.js --visible    # Show browser window (for pick.js)
+./browser-start.js                   # Headless with user profile (default)
+./browser-start.js --no-profile      # Fresh profile, no cookies
+./browser-start.js --visible         # Show browser window (for pick.js)
+./browser-start.js --allow-localhost # Dev-only: allow loopback/local dev URLs
 ```
 
 Headless is the default. Use `--visible` only when using `browser-pick.js` or debugging visually. Profile copying is also default — only Cookies, Preferences, and Local State are copied. Uses `--password-store=basic` for cookie portability.
 
 ⚠️ Security: profile mode contains login cookies. Use `./browser-start.js --no-profile` for untrusted pages, untrusted repositories, CI, shared machines, or whenever login state is unnecessary. Never expose the generated CDP port or cookie values in chat/logs.
+
+⚠️ Local dev: browser navigation blocks localhost/private/local-network URLs by default. Start with `./browser-start.js --allow-localhost` only when inspecting a local development server; prefer `./browser-start.js --no-profile --allow-localhost` unless copied cookies are required. This allows loopback URLs (`localhost`, `*.localhost`, `127.0.0.0/8`, `::1`, `0.0.0.0`) and hostnames that resolve exclusively to loopback for helper navigation and page requests; private LAN ranges, cloud metadata hosts, `.local`, and `.internal` remain blocked. The flag is stored in the browser-tools cache and is cleared by `browser-stop.js` or by starting again without `--allow-localhost`.
 
 The CDP port is random and bound to `127.0.0.1`; helper scripts read it from a `0600` cache file. Only one instance runs at a time.
 
@@ -42,6 +45,8 @@ Call when done to free ~430MB memory. Not strictly required—`browser-start.js`
 ```bash
 ./browser-nav.js https://example.com
 ./browser-nav.js https://example.com --new
+# after ./browser-start.js --allow-localhost:
+./browser-nav.js http://localhost:5173
 ```
 
 ## Evaluate JavaScript

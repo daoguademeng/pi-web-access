@@ -19,7 +19,7 @@ A single tool with 6 actions:
 
 ### `browser-tools` Skill
 
-Headless Chrome automation via Chrome DevTools Protocol — for JS-rendered pages, login-gated content, and live data extraction. The CDP port is random and bound to `127.0.0.1`; default profile mode copies cookies, so prefer `--no-profile` for untrusted pages.
+Headless Chrome automation via Chrome DevTools Protocol — for JS-rendered pages, login-gated content, and live data extraction. The CDP port is random and bound to `127.0.0.1`; default profile mode copies cookies, so prefer `--no-profile` for untrusted pages. Localhost/private URLs are blocked by default; use `--allow-localhost` for loopback-only local dev servers.
 
 | Script | Purpose |
 |--------|---------|
@@ -42,7 +42,7 @@ Interactive TUI for managing API keys and settings — no manual JSON editing re
 
 Precedence: environment variables > project config > global config > defaults.
 
-Security policy: project config cannot override provider endpoint URLs (`exaBaseUrl`, `tavilyApiUrl`, etc.). Endpoints are global/env-only and validated against HTTPS + official host allowlists to avoid API-key exfiltration from untrusted repositories. `fetch`, `map`, Exa find-similar, and browser navigation block localhost/private/link-local/metadata/`.local` URLs by default.
+Security policy: project config cannot override provider endpoint URLs (`exaBaseUrl`, `tavilyApiUrl`, etc.). Endpoints are global/env-only and validated against HTTPS + official host allowlists to avoid API-key exfiltration from untrusted repositories. `fetch`, `map`, Exa find-similar, and browser navigation block localhost/private/link-local/metadata/`.local` URLs by default. browser-tools can be started with `browser-start.js --allow-localhost` for dev-only loopback access (`localhost` / `*.localhost` / `127.0.0.0/8` / `::1` / `0.0.0.0`) and hostnames resolving exclusively to loopback; private LAN ranges, metadata hosts, `.local`, and `.internal` remain blocked.
 
 ## Install
 
@@ -85,7 +85,8 @@ Alternatively, use environment variables:
 
 # browser-tools
 cd skills/browser-tools
-./browser-start.js --no-profile # safer: fresh profile, no cookies
+./browser-start.js --no-profile                    # safer: fresh profile, no cookies
+./browser-start.js --no-profile --allow-localhost  # dev-only loopback access for local servers
 ./browser-nav.js https://example.com
 ./browser-content.js https://example.com
 ./browser-stop.js

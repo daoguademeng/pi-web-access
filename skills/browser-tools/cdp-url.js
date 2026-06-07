@@ -12,6 +12,10 @@ export function browserToolsCacheBase() {
       : join(HOME, ".cache", "browser-tools");
 }
 
+export function localAccessFlagPath() {
+  return join(browserToolsCacheBase(), ".allow-localhost");
+}
+
 export function browserURL() {
   const portFile = join(browserToolsCacheBase(), ".port");
   if (!existsSync(portFile)) throw new Error("CDP port file not found. Run: browser-start.js");

@@ -19,7 +19,7 @@
 
 ### `browser-tools` 技能
 
-通过 Chrome DevTools Protocol 实现 headless 浏览器自动化——用于 JS 渲染页面（任何平台）、需登录的内容和实时数据提取。CDP 端口随机生成并仅绑定 `127.0.0.1`；默认 profile 模式会复制 cookie，登录态敏感，处理不可信页面时请优先使用 `--no-profile`。
+通过 Chrome DevTools Protocol 实现 headless 浏览器自动化——用于 JS 渲染页面（任何平台）、需登录的内容和实时数据提取。CDP 端口随机生成并仅绑定 `127.0.0.1`；默认 profile 模式会复制 cookie，登录态敏感，处理不可信页面时请优先使用 `--no-profile`。默认阻止 localhost/私网 URL；调试本地开发服务器时可用 `--allow-localhost` 只放行 loopback。
 
 | 脚本 | 用途 |
 |------|------|
@@ -42,7 +42,7 @@
 
 优先级：环境变量 > 项目配置 > 全局配置 > 默认值。
 
-安全策略：项目配置不能覆盖 provider endpoint URL（如 `exaBaseUrl`、`tavilyApiUrl` 等），这些高风险 endpoint 只允许来自全局配置/环境变量并经过 HTTPS 与官方 host allowlist 校验，以避免不可信仓库窃取全局 API key。`fetch` / `map` / find-similar 默认阻止 localhost、私网、link-local、metadata 和 `.local` URL。
+安全策略：项目配置不能覆盖 provider endpoint URL（如 `exaBaseUrl`、`tavilyApiUrl` 等），这些高风险 endpoint 只允许来自全局配置/环境变量并经过 HTTPS 与官方 host allowlist 校验，以避免不可信仓库窃取全局 API key。`fetch` / `map` / find-similar 默认阻止 localhost、私网、link-local、metadata 和 `.local` URL。browser-tools 同样默认阻止本地 URL；`browser-start.js --allow-localhost` 仅为开发调试放行 loopback（`localhost` / `*.localhost` / `127.0.0.0/8` / `::1` / `0.0.0.0`）以及只解析到 loopback 的域名，仍阻止私网、metadata、`.local`、`.internal`。
 
 ## 安装
 
@@ -85,7 +85,8 @@ browser-tools 需要系统原生安装 Google Chrome 或 Chromium（非 Flatpak/
 
 # browser-tools
 cd skills/browser-tools
-./browser-start.js --no-profile # 更安全：不复制 cookie/profile
+./browser-start.js --no-profile                    # 更安全：不复制 cookie/profile
+./browser-start.js --no-profile --allow-localhost  # 调试本地 dev server 时放行 loopback
 ./browser-nav.js https://example.com
 ./browser-content.js https://example.com
 ./browser-stop.js

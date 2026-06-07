@@ -1,5 +1,23 @@
+import { existsSync } from "node:fs";
 import { isIP } from "node:net";
 import { lookup } from "node:dns/promises";
+import { localAccessFlagPath } from "./cdp-url.js";
+
+function normalizeHost(host) {
+  return host.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+}
+
+function isLocalhostName(host) {
+  return host === "localhost" || host.endsWith(".localhost");
+}
+
+function isLocalhostIp(host) {
+  const lower = host.toLowerCase();
+  if (host === "0.0.0.0" || host.startsWith("127.")) return true;
+  if (lower === "::1") return true;
+  const mappedIpv4 = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
+  return mappedIpv4 ? isLocalhostIp(mappedIpv4) : false;
+}
 
 function blockedIp(host) {
   if (host === "0.0.0.0" || host === "255.255.255.255" || host.startsWith("127.") || host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("169.254.")) return true;
@@ -9,50 +27,77 @@ function blockedIp(host) {
   return lower === "::1" || lower === "::" || lower.startsWith("::ffff:") || lower.startsWith("fc") || lower.startsWith("fd") || lower.startsWith("fe80") || lower.startsWith("ff");
 }
 
-function assertPublicHost(u) {
-  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
-  if (host === "localhost" || host.endsWith(".local") || host.endsWith(".localhost") || host.endsWith(".internal") || host === "metadata.google.internal") {
+export function localhostAccessEnabled(options = {}) {
+  return options.allowLocalhost ?? existsSync(localAccessFlagPath());
+}
+
+function assertHostAllowedBeforeDns(host, allowLocalhost) {
+  if (host === "metadata.google.internal") throw new Error("metadata URLs are blocked");
+
+  if (isLocalhostName(host)) {
+    if (allowLocalhost) return { skipDns: true };
     throw new Error("local/private URLs are blocked");
   }
-  if (isIP(host) && blockedIp(host)) throw new Error("local/private IP URLs are blocked");
+
+  if (isIP(host) && blockedIp(host)) {
+    if (allowLocalhost && isLocalhostIp(host)) return { skipDns: true };
+    throw new Error("local/private IP URLs are blocked");
+  }
+
+  if (host.endsWith(".local") || host.endsWith(".internal")) {
+    throw new Error("local/private URLs are blocked");
+  }
+
+  return { skipDns: false };
+}
+
+async function assertResolvedHost(host, allowLocalhost) {
+  if (isIP(host)) return;
+
+  let addresses;
+  try { addresses = await lookup(host, { all: true, verbatim: true }); }
+  catch { throw new Error("could not validate URL hostname"); }
+
+  const privateAddresses = addresses.filter((a) => blockedIp(a.address));
+  if (privateAddresses.length === 0) return;
+
+  if (allowLocalhost && addresses.every((a) => isLocalhostIp(a.address))) return;
+
+  throw new Error("URL resolves to a local/private address");
+}
+
+async function assertAllowedHost(u, options = {}) {
+  const allowLocalhost = localhostAccessEnabled(options);
+  const host = normalizeHost(u.hostname);
+  const { skipDns } = assertHostAllowedBeforeDns(host, allowLocalhost);
+  if (!skipDns) await assertResolvedHost(host, allowLocalhost);
   return host;
 }
 
-async function assertPublicResolvedHost(host) {
-  if (!isIP(host)) {
-    let addresses;
-    try { addresses = await lookup(host, { all: true, verbatim: true }); }
-    catch { throw new Error("could not validate URL hostname"); }
-    if (addresses.some((a) => blockedIp(a.address))) throw new Error("URL resolves to a local/private address");
-  }
-}
-
-export async function assertPublicHttpUrl(input) {
+export async function assertPublicHttpUrl(input, options = {}) {
   let u;
   try { u = new URL(input); } catch { throw new Error("invalid URL"); }
   if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("only http(s) URLs are allowed");
-  const host = assertPublicHost(u);
-  await assertPublicResolvedHost(host);
+  await assertAllowedHost(u, options);
   return u.toString();
 }
 
-async function assertPublicBrowserRequestUrl(input) {
+async function assertPublicBrowserRequestUrl(input, options = {}) {
   let u;
   try { u = new URL(input); } catch { throw new Error("invalid URL"); }
   if (!["http:", "https:", "ws:", "wss:"].includes(u.protocol)) throw new Error("unsupported browser request URL scheme");
-  const host = assertPublicHost(u);
-  await assertPublicResolvedHost(host);
+  await assertAllowedHost(u, options);
   return u.toString();
 }
 
-export async function installPublicRequestGuard(page) {
+export async function installPublicRequestGuard(page, options = {}) {
   let blocked = null;
   await page.setRequestInterception(true);
   page.on("request", async (request) => {
     try {
       const url = request.url();
       if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("ws://") || url.startsWith("wss://")) {
-        await assertPublicBrowserRequestUrl(url);
+        await assertPublicBrowserRequestUrl(url, options);
       } else if (request.isNavigationRequest() && url !== "about:blank") {
         throw new Error("only http(s) navigation URLs are allowed");
       }

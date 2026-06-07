@@ -92,11 +92,12 @@ web_access action: "fetch" url: "https://github.com/user/repo/blob/main/file.py"
 When the answer lives at a known URL (especially JS-rendered & login-gated pages), use browser-tools directly. For live data like follower counts or prices, this is faster than other methodes may be stale. Also use when `fetch` returns empty or the page requires login:
 ```bash
 cd skills/browser-tools
-./browser-start.js --no-profile  # safer for untrusted pages; no cookies copied
-./browser-start.js  # necessary for login-gated pages; copy user's login cookies
+./browser-start.js --no-profile                    # safer for untrusted pages; no cookies copied
+./browser-start.js                                 # necessary for login-gated pages; copy user's login cookies
+./browser-start.js --no-profile --allow-localhost  # dev-only: inspect localhost/*.localhost loopback URLs
 ./browser-content.js <URL>
 ```
-It launches Chrome with the user's cookies by default. This is powerful and risky; use `--no-profile` unless login state is required. See browser-tools SKILL.md for full usage.
+It launches Chrome with the user's cookies by default. This is powerful and risky; use `--no-profile` unless login state is required. Loopback URLs remain blocked unless Chrome was started with `--allow-localhost`; that flag only opens localhost/loopback dev URLs and hostnames resolving exclusively to loopback. Private LAN and metadata hosts stay blocked. See browser-tools SKILL.md for full usage.
 
 ## Deep Research Workflow
 

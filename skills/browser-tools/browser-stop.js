@@ -2,6 +2,7 @@
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
+import { localAccessFlagPath } from "./cdp-url.js";
 
 const HOME = homedir();
 const OS = platform();
@@ -13,6 +14,7 @@ const cacheBase = OS === "darwin"
 		: join(HOME, ".cache", "browser-tools");
 const PID_FILE = join(cacheBase, ".pid");
 const PORT_FILE = join(cacheBase, ".port");
+const LOCALHOST_FLAG_FILE = localAccessFlagPath();
 
 function commandLooksLikeBrowserTools(pid) {
 	if (OS !== "linux") return true;
@@ -34,6 +36,7 @@ if (existsSync(PID_FILE)) {
 	try { unlinkSync(PID_FILE); } catch { /* ignore */ }
 	try { unlinkSync(PORT_FILE); } catch { /* ignore */ }
 }
+try { unlinkSync(LOCALHOST_FLAG_FILE); } catch { /* ignore */ }
 
 await new Promise(r => setTimeout(r, 500));
 process.stdout.write("✓ Chrome stopped\n");
